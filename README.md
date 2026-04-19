@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-green.svg)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Agentic-orange.svg)](https://www.langchain.com/langgraph)
+[![CI](https://github.com/Mobicos/smartsre-copilot-py/actions/workflows/ci.yml/badge.svg)](https://github.com/Mobicos/smartsre-copilot-py/actions/workflows/ci.yml)
 
 SmartSRE Copilot is a FastAPI-based SRE assistant that combines:
 
@@ -362,6 +363,10 @@ If you want to evolve this project beyond demo usage, the highest-value next ste
 3. connect MCP tools to real observability systems
 4. add tests for API and service layers
 5. standardize frontend and backend validation behavior
+
+## Contributing
+
+See [CONTRIBUTING.md](/Users/mobicos/dev-sourcecode/Project-master/SmartSRE%20Copilot%20Py/CONTRIBUTING.md) for local setup, commit style, and pull request expectations.
 
 ## License
 
