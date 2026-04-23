@@ -9,6 +9,7 @@ UPLOAD_API = $(SERVER_URL)/api/upload
 HEALTH_CHECK_API = $(SERVER_URL)/health
 DOCS_DIR = aiops-docs
 MILVUS_CONTAINER = milvus-standalone
+COMPOSE_FILE = docker-compose.yml
 
 # 颜色输出
 GREEN = \033[0;32m
@@ -21,6 +22,7 @@ NC = \033[0m
         install install-dev dev run test test-quick format lint fix type-check \
         security pre-commit-install pre-commit check-all coverage docs shell \
         ipython watch add add-dev remove list-docs test-upload sync logs \
+        db-upgrade db-revision \
         start-cls stop-cls start-monitor stop-monitor start-api stop-api status-mcp
 
 # ============================================================
@@ -35,9 +37,10 @@ help:
 	@echo "  $(YELLOW)make init$(NC)         - 🚀 一键初始化（Docker → 服务 → 上传文档）"
 	@echo ""
 	@echo "$(CYAN)【Docker 管理】$(NC)"
-	@echo "  $(YELLOW)make up$(NC)           - 🐳 启动 Milvus 容器"
-	@echo "  $(YELLOW)make down$(NC)         - 🛑 停止 Milvus 容器"
+	@echo "  $(YELLOW)make up$(NC)           - 📦 启动完整 Docker 栈"
+	@echo "  $(YELLOW)make down$(NC)         - 🛑 停止完整 Docker 栈"
 	@echo "  $(YELLOW)make status$(NC)       - 📊 查看容器状态"
+	@echo "  $(YELLOW)make db-upgrade$(NC)   - 🗄️  执行数据库迁移"
 	@echo ""
 	@echo "$(CYAN)【服务管理】$(NC)"
 	@echo "  $(YELLOW)make start$(NC)        - 🚀 启动所有服务（MCP + FastAPI）"
@@ -98,7 +101,7 @@ init:
 	@echo "$(GREEN)🚀 开始一键初始化 SmartSRE Copilot...$(NC)"
 	@echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"
 	@echo ""
-	@echo "$(YELLOW)步骤 1/4: 启动 Docker 容器（Milvus 向量数据库）$(NC)"
+	@echo "$(YELLOW)步骤 1/4: 启动 Docker 容器（完整栈）$(NC)"
 	@$(MAKE) up
 	@echo ""
 	@echo "$(YELLOW)步骤 2/4: 启动 FastAPI 服务$(NC)"
@@ -130,28 +133,31 @@ init:
 
 # 启动 Docker 容器（使用 docker compose）
 up:
-	@echo "$(YELLOW)🐳 检查 Docker 容器状态...$(NC)"
+	@echo "$(YELLOW)📦 检查 Docker 容器状态...$(NC)"
 	@if ! docker info > /dev/null 2>&1; then \
 		echo "$(YELLOW)⚠️  Docker 未运行，尝试启动 Colima...$(NC)"; \
 		colima start 2>/dev/null || (echo "$(RED)❌ 无法启动 Docker，请手动启动$(NC)" && exit 1); \
 		sleep 3; \
 	fi
-	@if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
-		echo "$(GREEN)✅ Milvus 容器已经在运行中$(NC)"; \
-		docker ps --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -10; \
+	@if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$" && docker ps --format '{{.Names}}' | grep -q "^smartsre-app$$"; then \
+		echo "$(GREEN)✅ SmartSRE 容器栈已经在运行中$(NC)"; \
+		docker compose -f $(COMPOSE_FILE) ps; \
 	else \
-		echo "$(YELLOW)🚀 启动 Milvus 相关容器...$(NC)"; \
-		docker compose -f vector-database.yml up -d; \
+		echo "$(YELLOW)🚀 启动 SmartSRE 容器栈...$(NC)"; \
+		docker compose -f $(COMPOSE_FILE) up -d --build; \
 		echo "$(YELLOW)⏳ 等待容器启动...$(NC)"; \
-		sleep 5; \
-		if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$"; then \
+		sleep 8; \
+		if docker ps --format '{{.Names}}' | grep -q "^$(MILVUS_CONTAINER)$$" && docker ps --format '{{.Names}}' | grep -q "^smartsre-app$$"; then \
 			echo "$(GREEN)✅ Docker 容器启动成功！$(NC)"; \
 			echo ""; \
 			echo "$(GREEN)📋 运行中的容器:$(NC)"; \
-			docker ps --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -10; \
+			docker compose -f $(COMPOSE_FILE) ps; \
 			echo ""; \
 			echo "$(GREEN)🌐 服务访问地址:$(NC)"; \
 			echo "   Milvus: localhost:19530"; \
+			echo "   PostgreSQL: localhost:5432"; \
+			echo "   Redis: localhost:6379"; \
+			echo "   App: http://localhost:9900"; \
 			echo "   Attu (Web UI): http://localhost:8000"; \
 			echo "   MinIO: http://localhost:9001 (admin/minioadmin)"; \
 		else \
@@ -162,28 +168,42 @@ up:
 
 # 停止 Docker 容器
 down:
-	@echo "$(YELLOW)🛑 停止 Docker 容器...$(NC)"
-	@if docker ps --format '{{.Names}}' | grep -q "milvus"; then \
-		docker compose -f vector-database.yml down; \
+	@echo "$(YELLOW)🛑 停止 Docker 容器栈...$(NC)"
+	@if docker ps -a --format '{{.Names}}' | grep -q "smartsre"; then \
+		docker compose -f $(COMPOSE_FILE) down; \
 		echo "$(GREEN)✅ Docker 容器已停止$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠️  没有运行中的 Milvus 容器$(NC)"; \
+		echo "$(YELLOW)⚠️  没有运行中的 SmartSRE 容器栈$(NC)"; \
 	fi
 
 # 查看容器状态
 status:
 	@echo "$(YELLOW)📊 Docker 容器状态:$(NC)"
 	@echo ""
-	@if docker ps -a --format '{{.Names}}' | grep -q "milvus"; then \
-		docker ps -a --filter "name=milvus" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"; \
+	@if docker ps -a --format '{{.Names}}' | grep -q "smartsre"; then \
+		docker compose -f $(COMPOSE_FILE) ps; \
 		echo ""; \
-		running=$$(docker ps --filter "name=milvus" --format '{{.Names}}' | wc -l | tr -d ' '); \
-		total=$$(docker ps -a --filter "name=milvus" --format '{{.Names}}' | wc -l | tr -d ' '); \
+		running=$$(docker compose -f $(COMPOSE_FILE) ps --status running --services | wc -l | tr -d ' '); \
+		total=$$(docker compose -f $(COMPOSE_FILE) ps --services | wc -l | tr -d ' '); \
 		echo "$(GREEN)运行中: $$running / $$total$(NC)"; \
 	else \
-		echo "$(YELLOW)⚠️  没有找到 Milvus 相关容器$(NC)"; \
-		echo "$(YELLOW)提示: 请先创建 Milvus 容器$(NC)"; \
+		echo "$(YELLOW)⚠️  没有找到 SmartSRE 相关容器$(NC)"; \
+		echo "$(YELLOW)提示: 请先执行 make up$(NC)"; \
 	fi
+
+# 执行数据库迁移
+db-upgrade:
+	@echo "$(YELLOW)🗄️  执行数据库迁移...$(NC)"
+	@.venv/bin/alembic upgrade head
+
+# 生成新的迁移脚本
+db-revision:
+	@if [ -z "$(MESSAGE)" ]; then \
+		echo "$(RED)❌ 请提供 MESSAGE，例如: make db-revision MESSAGE=\"add user table\"$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)📝 生成数据库迁移: $(MESSAGE)$(NC)"
+	@.venv/bin/alembic revision -m "$(MESSAGE)"
 
 # ============================================================
 # MCP 服务管理

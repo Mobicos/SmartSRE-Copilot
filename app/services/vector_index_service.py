@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.config import UPLOADS_DIR
+from app.core.container import service_container
 from app.services.document_splitter_service import document_splitter_service
-from app.services.vector_store_manager import vector_store_manager
 
 
 class IndexingResult:
@@ -154,6 +154,7 @@ class VectorIndexService:
 
             # 2. 删除该文件的旧数据（如果存在）
             normalized_path = path.as_posix()
+            vector_store_manager = service_container.get_vector_store_manager()
             vector_store_manager.delete_by_source(normalized_path)
 
             # 3. 使用新的文档分割器

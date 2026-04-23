@@ -3,16 +3,21 @@
 主应用程序，配置路由、中间件、静态文件等
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from app.config import STATIC_DIR, config
+from app.core.container import service_container
+from app.persistence import audit_log_repository, database_manager
+from app.security import validate_security_configuration
 from loguru import logger
 from app.api import chat, health, file, aiops
 from app.core.milvus_client import milvus_manager
+from app.services.task_dispatcher import task_dispatcher
 
 
 @asynccontextmanager
@@ -25,18 +30,37 @@ async def lifespan(app: FastAPI):
     logger.info(f"🌐 监听地址: http://{config.host}:{config.port}")
     logger.info(f"📚 API 文档: http://{config.host}:{config.port}/docs")
     
-    # 连接 Milvus
-    logger.info("🔌 正在连接 Milvus...")
-    milvus_manager.connect()
-    logger.info("✅ Milvus 连接成功")
+    logger.info("🗄️ 正在初始化持久化存储...")
+    database_manager.initialize()
+    logger.info("✅ 持久化存储初始化成功")
+
+    logger.info("🔐 正在校验安全配置...")
+    validate_security_configuration()
+    logger.info("✅ 安全配置校验通过")
+
+    if config.task_dispatcher_mode == "embedded":
+        logger.info("🧵 正在启动嵌入式任务调度器...")
+        await task_dispatcher.start()
+        logger.info("✅ 嵌入式任务调度器启动成功")
+    else:
+        logger.info("🧵 当前为 detached 模式，请单独启动 app/worker.py")
+
+    # 初始化核心依赖
+    logger.info("🔌 正在初始化核心依赖...")
+    service_container.initialize_required_services()
+    logger.info("✅ 核心依赖初始化成功")
     
     logger.info("=" * 60)
     
     yield
     
     # 关闭时执行
+    if task_dispatcher.is_started:
+        logger.info("🧵 正在停止任务调度器...")
+        await task_dispatcher.shutdown()
     logger.info("🔌 正在关闭 Milvus 连接...")
     milvus_manager.close()
+    service_container.reset()
     logger.info(f"👋 {config.app_name} 关闭")
 
 
@@ -51,11 +75,68 @@ app = FastAPI(
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
-    allow_credentials=True,
+    allow_origins=config.cors_origins,
+    allow_credentials="*" not in config.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _write_audit_log(
+    request: Request,
+    *,
+    request_id: str,
+    status_code: int,
+    error_message: str | None = None,
+) -> None:
+    principal = getattr(request.state, "principal", None)
+    client = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    try:
+        audit_log_repository.log_request(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            subject=getattr(principal, "subject", None),
+            role=getattr(principal, "role", None),
+            client_ip=client,
+            user_agent=user_agent,
+            error_message=error_message,
+        )
+    except Exception as exc:
+        logger.warning(f"[request_id={request_id}] 审计日志写入失败: {exc}")
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """为每个请求注入 request_id 并记录基础审计日志。"""
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
+
+    logger.info(f"[request_id={request_id}] {request.method} {request.url.path} - started")
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        _write_audit_log(
+            request,
+            request_id=request_id,
+            status_code=500,
+            error_message=str(exc),
+        )
+        logger.exception(f"[request_id={request_id}] {request.method} {request.url.path} - failed")
+        raise
+
+    response.headers["X-Request-ID"] = request_id
+    _write_audit_log(
+        request,
+        request_id=request_id,
+        status_code=response.status_code,
+    )
+    logger.info(
+        f"[request_id={request_id}] {request.method} {request.url.path} - completed {response.status_code}"
+    )
+    return response
 
 # 注册路由
 app.include_router(health.router, tags=["健康检查"])

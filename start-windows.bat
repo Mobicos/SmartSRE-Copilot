@@ -101,42 +101,50 @@ REM 设置 Python 命令
 set PYTHON_CMD=.venv\Scripts\python.exe
 
 REM 启动 Docker Compose
-echo [4/6] 启动 Milvus 向量数据库...
+echo [4/6] 启动 SmartSRE Docker 容器栈...
 docker ps --format "{{.Names}}" | findstr "milvus-standalone" >nul 2>&1
 if not errorlevel 1 (
-    echo [信息] Milvus 容器已在运行
+    echo [信息] SmartSRE 容器栈已在运行
 ) else (
-    docker compose -f vector-database.yml up -d
+    docker compose up -d --build
     if errorlevel 1 (
         echo [错误] Docker 启动失败，请确保 Docker Desktop 已启动
         pause
         exit /b 1
     )
-    echo [信息] 等待 Milvus 启动（10秒）...
-    timeout /t 10 /nobreak >nul
+    echo [信息] 等待容器启动（15秒）...
+    timeout /t 15 /nobreak >nul
 )
-echo [成功] Milvus 数据库就绪
+docker ps --format "{{.Names}}" | findstr "smartsre-app" >nul 2>&1
+if errorlevel 1 (
+    echo [错误] SmartSRE App 容器未正常启动
+    pause
+    exit /b 1
+) else (
+    echo [成功] Docker 容器栈就绪
+)
 echo.
 
 REM 启动 CLS MCP 服务
-echo [5/6] 启动 CLS MCP 服务...
+echo [5/8] 启动 CLS MCP 服务...
 start "CLS MCP Server" /min %PYTHON_CMD% mcp_servers/cls_server.py
 timeout /t 2 /nobreak >nul
 echo [成功] CLS MCP 服务已启动
 echo.
 
 REM 启动 Monitor MCP 服务
-echo [6/6] 启动 Monitor MCP 服务...
+echo [6/8] 启动 Monitor MCP 服务...
 start "Monitor MCP Server" /min %PYTHON_CMD% mcp_servers/monitor_server.py
 timeout /t 2 /nobreak >nul
 echo [成功] Monitor MCP 服务已启动
 echo.
 
-REM 启动 FastAPI 服务
+REM 启动 FastAPI 服务（本地调试模式可选）
 echo [7/8] 启动 FastAPI 服务...
 start "SmartSRE Copilot API" %PYTHON_CMD% -m uvicorn app.main:app --host 0.0.0.0 --port 9900
 echo [信息] 等待服务启动（15秒）...
-timeout /t 15 /nobreak >nul
+    timeout /t 10 /nobreak >nul
+    timeout /t 15 /nobreak >nul
 echo.
 
 REM 检查服务状态并上传文档

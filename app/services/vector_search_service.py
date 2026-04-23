@@ -1,12 +1,12 @@
-"""向量检索服务模块"""
+"""向量检索服务模块。"""
 
 from typing import Any, Dict, List
 
+from langchain_core.embeddings import Embeddings
 from loguru import logger
 from pymilvus import Collection
 
 from app.core.milvus_client import milvus_manager
-from app.services.vector_embedding_service import vector_embedding_service
 
 
 class SearchResult:
@@ -37,8 +37,9 @@ class SearchResult:
 class VectorSearchService:
     """向量检索服务 - 负责从 Milvus 中搜索相似向量"""
 
-    def __init__(self):
+    def __init__(self, embedding_service: Embeddings):
         """初始化向量检索服务"""
+        self.embedding_service = embedding_service
         logger.info("向量检索服务初始化完成")
 
     def search_similar_documents(self, query: str, top_k: int = 3) -> List[SearchResult]:
@@ -59,7 +60,8 @@ class VectorSearchService:
             logger.info(f"开始搜索相似文档, 查询: {query}, topK: {top_k}")
 
             # 1. 将查询文本向量化
-            query_vector = vector_embedding_service.embed_query(query)
+            _ = milvus_manager.connect()
+            query_vector = self.embedding_service.embed_query(query)
             logger.debug(f"查询向量生成成功, 维度: {len(query_vector)}")
 
             # 2. 获取 collection
@@ -99,6 +101,3 @@ class VectorSearchService:
             logger.error(f"搜索相似文档失败: {e}")
             raise RuntimeError(f"搜索失败: {e}") from e
 
-
-# 全局单例
-vector_search_service = VectorSearchService()

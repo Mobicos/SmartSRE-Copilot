@@ -15,6 +15,7 @@ class SmartSRECopilotApp {
         this.initMarkdown();
         this.checkAndSetCentered();
         this.renderChatHistory();
+        this.syncChatHistoriesFromServer();
     }
 
     // 初始化Markdown配置
@@ -372,6 +373,39 @@ class SmartSRECopilotApp {
             console.error('保存历史对话失败:', e);
         }
     }
+
+    async syncChatHistoriesFromServer() {
+        try {
+            const response = await fetch('/api/chat/sessions');
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+            const sessions = Array.isArray(data.data) ? data.data : [];
+            if (sessions.length === 0) {
+                return;
+            }
+
+            const localById = new Map(this.chatHistories.map((history) => [history.id, history]));
+            this.chatHistories = sessions.map((session) => {
+                const localHistory = localById.get(session.id);
+                return {
+                    id: session.id,
+                    title: session.title,
+                    messages: localHistory?.messages || [],
+                    createdAt: session.createdAt,
+                    updatedAt: session.updatedAt,
+                    sessionType: session.sessionType,
+                };
+            });
+
+            this.saveChatHistories();
+            this.renderChatHistory();
+        } catch (error) {
+            console.warn('同步服务端历史对话失败:', error);
+        }
+    }
     
     // 渲染历史对话列表
     renderChatHistory() {
@@ -693,7 +727,9 @@ class SmartSRECopilotApp {
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
+                const errorPayload = await response.json().catch(() => null);
+                const errorMessage = errorPayload?.data?.errorMessage || errorPayload?.message || `HTTP错误: ${response.status}`;
+                throw new Error(errorMessage);
             }
 
             const data = await response.json();
@@ -1144,10 +1180,12 @@ class SmartSRECopilotApp {
 
             const data = await response.json();
 
-            if ((data.code === 200 || data.message === 'success') && data.data) {
-                // 在聊天界面显示上传成功消息
-                const successMessage = `${file.name} 上传到知识库成功`;
-                this.addMessage('assistant', successMessage, false, true);
+            if ((data.code === 202 || data.message === 'accepted') && data.data) {
+                const taskId = data.data.indexing?.taskId;
+                if (!taskId) {
+                    throw new Error('服务未返回索引任务ID');
+                }
+                await this.waitForIndexingTask(taskId, file.name);
             } else {
                 throw new Error(data.message || '上传失败');
             }
@@ -1164,6 +1202,33 @@ class SmartSRECopilotApp {
             this.showUploadOverlay(false);
             this.updateUI();
         }
+    }
+
+    async waitForIndexingTask(taskId, filename) {
+        const maxAttempts = 60;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const response = await fetch(`${this.apiBaseUrl}/index_tasks/${taskId}`);
+            if (!response.ok) {
+                throw new Error(`索引任务查询失败: ${response.status}`);
+            }
+
+            const data = await response.json();
+            const task = data.data;
+            const status = task?.status;
+
+            if (status === 'completed') {
+                this.addMessage('assistant', `${filename} 上传并完成知识库索引`, false, true);
+                return;
+            }
+
+            if (status === 'failed') {
+                throw new Error(task?.error_message || '知识库索引失败');
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+
+        throw new Error('知识库索引超时，请稍后重试');
     }
 
     // 格式化文件大小
