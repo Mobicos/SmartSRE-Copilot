@@ -1,7 +1,4 @@
-"""
-MCP 客户端管理
-提供全局单例的 MCP 客户端，避免重复初始化
-"""
+"""MCP 客户端管理。"""
 
 import asyncio
 from typing import Optional, Dict, Any, List
@@ -13,6 +10,7 @@ from loguru import logger
 
 # 全局 MCP 客户端（延迟初始化）
 _mcp_client: Optional[MultiServerMCPClient] = None
+_mcp_tools_cache: dict[tuple[tuple[str, str, str], ...], list[Any]] = {}
 
 
 async def retry_interceptor(
@@ -81,6 +79,53 @@ from app.config import config
 DEFAULT_MCP_SERVERS = config.mcp_servers
 
 
+def _normalize_servers(
+    servers: Dict[str, Dict[str, str]],
+) -> Dict[str, Dict[str, str]]:
+    """规范化并去重 MCP 服务配置。"""
+    normalized: Dict[str, Dict[str, str]] = {}
+    seen_targets: set[tuple[str, str]] = set()
+
+    for server_name, server_config in servers.items():
+        transport = server_config.get("transport", "").strip()
+        url = server_config.get("url", "").strip()
+        if not transport or not url:
+            logger.warning(f"跳过无效 MCP 配置: {server_name}")
+            continue
+
+        target = (transport, url)
+        if target in seen_targets:
+            logger.warning(
+                f"MCP 服务 {server_name} 与已有配置重复，已跳过重复加载: {transport} {url}"
+            )
+            continue
+
+        seen_targets.add(target)
+        normalized[server_name] = {
+            "transport": transport,
+            "url": url,
+        }
+
+    return normalized
+
+
+def _servers_signature(
+    servers: Dict[str, Dict[str, str]],
+) -> tuple[tuple[str, str, str], ...]:
+    """构建可缓存的服务签名。"""
+    return tuple(
+        (name, cfg["transport"], cfg["url"])
+        for name, cfg in sorted(servers.items(), key=lambda item: item[0])
+    )
+
+
+def _summarize_exception(error: BaseException) -> str:
+    """提取更易读的异常摘要。"""
+    if error.__cause__ is not None:
+        return _summarize_exception(error.__cause__)
+    return str(error)
+
+
 async def get_mcp_client(
     servers: Optional[Dict[str, Dict[str, str]]] = None,
     tool_interceptors: Optional[List] = None,
@@ -104,11 +149,15 @@ async def get_mcp_client(
     """
     global _mcp_client
     
+    normalized_servers = _normalize_servers(servers or DEFAULT_MCP_SERVERS)
+    if not normalized_servers:
+        raise RuntimeError("没有可用的 MCP 服务配置")
+
     # 如果请求新实例，直接创建并返回（不缓存）
     if force_new:
         logger.info("创建新的 MCP 客户端实例（非单例）")
         client = _create_mcp_client(
-            servers or DEFAULT_MCP_SERVERS, 
+            normalized_servers,
             tool_interceptors
         )
         # 不再需要 __aenter__()，直接返回即可
@@ -118,7 +167,7 @@ async def get_mcp_client(
     if _mcp_client is None:
         logger.info("初始化全局 MCP 客户端...")
         _mcp_client = _create_mcp_client(
-            servers or DEFAULT_MCP_SERVERS, 
+            normalized_servers,
             tool_interceptors
         )
         # 不再需要 __aenter__()，直接使用即可
@@ -181,3 +230,38 @@ def _create_mcp_client(
     
     # 第一个参数是 servers 配置，直接传递
     return MultiServerMCPClient(servers, **kwargs)  # type: ignore[arg-type]
+
+
+async def get_mcp_tools_with_fallback(
+    servers: Optional[Dict[str, Dict[str, str]]] = None,
+    tool_interceptors: Optional[List] = None,
+    force_refresh: bool = False,
+) -> List[Any]:
+    """按服务逐个加载 MCP 工具，单个服务失败时自动降级。"""
+    normalized_servers = _normalize_servers(servers or DEFAULT_MCP_SERVERS)
+    if not normalized_servers:
+        logger.info("未配置可用的 MCP 服务，跳过 MCP 工具加载")
+        return []
+
+    cache_key = _servers_signature(normalized_servers)
+    if not force_refresh and cache_key in _mcp_tools_cache:
+        return _mcp_tools_cache[cache_key]
+
+    loaded_tools: list[Any] = []
+    for server_name, server_config in normalized_servers.items():
+        try:
+            client = await get_mcp_client_with_retry(
+                servers={server_name: server_config},
+                tool_interceptors=tool_interceptors,
+                force_new=True,
+            )
+            tools = await client.get_tools()
+            logger.info(f"MCP 服务 {server_name} 成功加载 {len(tools)} 个工具")
+            loaded_tools.extend(tools)
+        except Exception as exc:
+            logger.warning(
+                f"MCP 服务 {server_name} 不可用，已降级跳过: {_summarize_exception(exc)}"
+            )
+
+    _mcp_tools_cache[cache_key] = loaded_tools
+    return loaded_tools

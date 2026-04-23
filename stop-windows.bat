@@ -36,17 +36,17 @@ if errorlevel 1 (
 echo.
 
 REM 停止 Docker 容器
-echo [4/4] 停止 Milvus 容器...
-docker ps --format "{{.Names}}" | findstr "milvus" >nul 2>&1
+echo [4/4] 停止 SmartSRE Docker 容器栈...
+docker ps --format "{{.Names}}" | findstr "smartsre" >nul 2>&1
 if not errorlevel 1 (
-    docker compose -f vector-database.yml down
+    docker compose down
     if errorlevel 1 (
         echo [错误] Docker 容器停止失败
     ) else (
-        echo [成功] Milvus 容器已停止
+        echo [成功] Docker 容器栈已停止
     )
 ) else (
-    echo [信息] Milvus 容器未运行
+    echo [信息] SmartSRE 容器栈未运行
 )
 echo.
 
@@ -56,6 +56,6 @@ echo ====================================
 echo.
 echo 提示:
 echo   - 如需完全清理 Docker 数据卷，运行:
-echo     docker compose -f vector-database.yml down -v
+echo     docker compose down -v
 echo.
 pause

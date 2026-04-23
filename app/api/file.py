@@ -2,10 +2,14 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.config import UPLOADS_DIR
+from app.persistence import indexing_task_repository
+from app.security import Principal, require_capability
+from app.services.indexing_task_service import indexing_task_service
+from app.services.task_dispatcher import task_dispatcher
 from app.services.vector_index_service import vector_index_service
 from loguru import logger
 
@@ -20,7 +24,10 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(
+    file: UploadFile = File(...),
+    _principal: Principal = Depends(require_capability("knowledge:write")),
+):
     """
     上传文件并自动创建向量索引
 
@@ -67,26 +74,26 @@ async def upload_file(file: UploadFile = File(...)):
         file_path.write_bytes(content)
 
         logger.info(f"文件上传成功: {file_path}")
-
-        # 5. 自动创建向量索引
-        try:
-            logger.info(f"开始为上传文件创建向量索引: {file_path}")
-            vector_index_service.index_single_file(str(file_path))
-            logger.info(f"向量索引创建成功: {file_path}")
-        except Exception as e:
-            logger.error(f"向量索引创建失败: {file_path}, 错误: {e}")
-            # 注意：即使索引失败，文件上传仍然成功，只是记录错误日志
+        task_id = indexing_task_service.submit_task(safe_filename, str(file_path))
+        await task_dispatcher.enqueue_indexing_task(
+            task_id,
+            str(file_path),
+        )
 
         # 6. 返回响应
         return JSONResponse(
-            status_code=200,
+            status_code=202,
             content={
-                "code": 200,
-                "message": "success",
+                "code": 202,
+                "message": "accepted",
                 "data": {
                     "filename": safe_filename,
                     "file_path": str(file_path),
                     "size": len(content),
+                    "indexing": {
+                        "taskId": task_id,
+                        "status": "queued",
+                    },
                 },
             },
         )
@@ -99,7 +106,10 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 @router.post("/index_directory")
-async def index_directory(directory_path: str = None):
+async def index_directory(
+    directory_path: str = None,
+    _principal: Principal = Depends(require_capability("knowledge:write")),
+):
     """
     索引指定目录下的所有文件
 
@@ -127,6 +137,26 @@ async def index_directory(directory_path: str = None):
     except Exception as e:
         logger.error(f"索引目录失败: {e}")
         raise HTTPException(status_code=500, detail=f"索引目录失败: {e}")
+
+
+@router.get("/index_tasks/{task_id}")
+async def get_index_task(
+    task_id: str,
+    _principal: Principal = Depends(require_capability("knowledge:read")),
+):
+    """查询索引任务状态。"""
+    task = indexing_task_repository.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="索引任务不存在")
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "code": 200,
+            "message": "success",
+            "data": task,
+        },
+    )
 
 
 def _get_file_extension(filename: str) -> str:

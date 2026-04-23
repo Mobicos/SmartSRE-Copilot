@@ -1,0 +1,36 @@
+"""独立任务 worker 入口。"""
+
+from __future__ import annotations
+
+import asyncio
+import signal
+
+from loguru import logger
+
+from app.persistence import database_manager
+from app.services.task_dispatcher import task_dispatcher
+
+
+async def run_worker() -> None:
+    """启动并保持索引任务 worker 运行。"""
+    database_manager.initialize()
+    await task_dispatcher.start()
+    logger.info("Indexing worker 已启动，等待任务...")
+
+    stop_event = asyncio.Event()
+
+    def _stop() -> None:
+        logger.info("收到停止信号，准备关闭 worker...")
+        stop_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, _stop)
+
+    await stop_event.wait()
+    await task_dispatcher.shutdown()
+    logger.info("Indexing worker 已停止")
+
+
+if __name__ == "__main__":
+    asyncio.run(run_worker())

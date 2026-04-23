@@ -21,7 +21,7 @@ from langchain_qwq import ChatQwen
 
 from app.config import config
 from app.tools import get_current_time, retrieve_knowledge
-from app.agent.mcp_client import get_mcp_client_with_retry
+from app.agent.mcp_client import get_mcp_tools_with_fallback
 
 # 阿里千问大模型和langchain集成参考： https://docs.langchain.com/oss/python/integrations/chat/qwen
 # 注意：需要配置环境变量 DASHSCOPE_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1 否则默认访问的是新加坡站点
@@ -114,11 +114,8 @@ class RagAgentService:
         if self._agent_initialized:
             return
 
-        # 使用全局 MCP 客户端管理器（带重试拦截器）
-        mcp_client = await get_mcp_client_with_retry()
-
-        # 获取 MCP 工具
-        mcp_tools = await mcp_client.get_tools()
+        # 获取 MCP 工具（逐个服务加载，失败时自动降级）
+        mcp_tools = await get_mcp_tools_with_fallback()
         logger.info(f"成功加载 {len(mcp_tools)} 个 MCP 工具")
 
         # 将 MCP 工具添加到实例变量中

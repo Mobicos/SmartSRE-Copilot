@@ -81,6 +81,8 @@ FastAPI
 - Agent framework: LangChain, LangGraph
 - LLM: DashScope / Qwen
 - Vector database: Milvus
+- Primary persistence: PostgreSQL
+- Queue / cache: Redis
 - Tool protocol: MCP
 - Frontend: static HTML, CSS, JavaScript
 
@@ -103,12 +105,14 @@ aiops-docs/    Sample knowledge base documents
 
 ## Current Scope
 
-This project is best viewed as an internal demo or prototype for SRE workflows.
+This project is best viewed as an internal SRE copilot that can run in a lightweight local mode or in a Dockerized service stack.
 
 - The MCP servers currently return mock data by default
-- Session memory is in-process, not durable storage
-- The frontend keeps chat history in browser local storage
-- Production hardening such as auth, tenancy, and full observability is not included yet
+- The default local fallback storage is SQLite
+- The Dockerized runtime supports PostgreSQL + Redis
+- API key and capability-based access control are available
+- Production mode now requires explicit auth configuration and non-wildcard CORS
+- PostgreSQL schema is managed through Alembic migrations
 
 ## Prerequisites
 
@@ -151,13 +155,23 @@ Use the included template:
 cp .env.example .env
 ```
 
-Then update the key fields, especially `DASHSCOPE_API_KEY`:
+Then update the key fields, especially `DASHSCOPE_API_KEY` and the security settings:
 
 ```env
 DASHSCOPE_API_KEY=your_api_key
+ENVIRONMENT=dev
+CORS_ALLOWED_ORIGINS=http://localhost:9900,http://127.0.0.1:9900
+APP_API_KEY=replace_with_a_secure_key
+
 DASHSCOPE_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 
-MILVUS_HOST=localhost
+DATABASE_BACKEND=postgres
+POSTGRES_DSN=postgresql://smartsre:smartsre@postgres:5432/smartsre
+REDIS_URL=redis://redis:6379/0
+TASK_QUEUE_BACKEND=redis
+TASK_DISPATCHER_MODE=detached
+
+MILVUS_HOST=standalone
 MILVUS_PORT=19530
 
 RAG_TOP_K=3
@@ -165,19 +179,38 @@ CHUNK_MAX_SIZE=800
 CHUNK_OVERLAP=100
 ```
 
+For production:
+- set `ENVIRONMENT=prod`
+- configure `APP_API_KEY` or `API_KEYS_JSON`
+- configure `CORS_ALLOWED_ORIGINS` to explicit origins instead of `*`
+
 ### 4. Start the full stack
 
 Linux or macOS:
 
 ```bash
+make up
+```
+
+This starts:
+- Milvus
+- PostgreSQL
+- Redis
+- a one-shot migration job
+- FastAPI app container
+- background worker container
+
+If you prefer the previous local-Python mode, you can still use:
+
+```bash
 make init
 ```
 
-This will:
-- start Milvus with Docker Compose
-- start MCP services
-- start FastAPI
-- upload sample documents from `aiops-docs/`
+If you run the app against a local PostgreSQL instance outside Docker, run migrations first:
+
+```bash
+make db-upgrade
+```
 
 ### 5. Open the app
 
@@ -197,11 +230,28 @@ Use the provided scripts:
 If you prefer manual startup:
 
 1. Start Docker
-2. Run `docker compose -f vector-database.yml up -d`
+2. Run `docker compose up -d --build`
 3. Start `mcp_servers/cls_server.py`
 4. Start `mcp_servers/monitor_server.py`
 5. Start `uvicorn app.main:app --host 0.0.0.0 --port 9900`
 6. Upload sample documents to `/api/upload`
+
+## Docker Runtime
+
+### Full stack
+
+```bash
+docker compose up -d --build
+```
+
+Docker services include:
+- `postgres`
+- `redis`
+- `migrate`
+- `app`
+- `worker`
+
+The `migrate` service applies `alembic upgrade head` before `app` and `worker` start.
 
 ## Configuration
 
@@ -210,7 +260,15 @@ The main runtime settings live in `app/config.py`.
 Key settings:
 
 - `DASHSCOPE_API_KEY`: required
+- `ENVIRONMENT`: `dev` or `prod`
+- `CORS_ALLOWED_ORIGINS`: comma-separated or JSON-array CORS allowlist
+- `APP_API_KEY` / `API_KEYS_JSON`: API key based auth configuration
 - `DASHSCOPE_API_BASE`: recommended for the compatible-mode endpoint
+- `DATABASE_BACKEND`: `sqlite` or `postgres`
+- `POSTGRES_DSN`: PostgreSQL connection string
+- `REDIS_URL`: Redis connection string
+- `TASK_QUEUE_BACKEND`: `database` or `redis`
+- `TASK_DISPATCHER_MODE`: `embedded` or `detached`
 - `DASHSCOPE_MODEL`: chat model
 - `MILVUS_HOST`, `MILVUS_PORT`: vector database connection
 - `RAG_TOP_K`: retrieval count
@@ -218,6 +276,17 @@ Key settings:
 - `MCP_CLS_URL`, `MCP_MONITOR_URL`: MCP service endpoints
 
 You can start from [.env.example](/Users/mobicos/dev-sourcecode/Project-master/SmartSRE%20Copilot%20Py/.env.example).
+
+### Database migrations
+
+For PostgreSQL, schema changes are managed with Alembic rather than startup-time table creation.
+
+Useful commands:
+
+```bash
+make db-upgrade
+make db-revision MESSAGE="describe change"
+```
 
 ## APIs
 
@@ -322,10 +391,10 @@ The final output is expected to be a Markdown diagnosis report with evidence and
 ## Limitations
 
 - MCP servers are mock implementations unless you wire them to real systems
-- No authentication or authorization layer
-- No persistent session store
+- API key / capability auth is intentionally lightweight and not yet a full enterprise IAM solution
+- Session, task, and audit persistence are available, but migrations are still SQL-first rather than ORM-managed
 - No automated test suite is included yet
-- Upload success does not always mean indexing succeeded semantically; check logs when debugging
+- Background indexing is asynchronous; check task status when debugging upload results
 
 ## Troubleshooting
 
@@ -338,8 +407,8 @@ The final output is expected to be a Markdown diagnosis report with evidence and
 ### Milvus connection fails
 
 ```bash
-docker compose -f vector-database.yml ps
-docker compose -f vector-database.yml restart
+docker compose ps
+docker compose restart
 ```
 
 ### MCP tools are unavailable

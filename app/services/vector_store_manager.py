@@ -1,14 +1,14 @@
-"""向量存储管理器 - 封装 Milvus VectorStore 操作"""
+"""向量存储管理器 - 封装 Milvus VectorStore 操作。"""
 
 from typing import List
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_milvus import Milvus
 from loguru import logger
 
 from app.config import config
 from app.core.milvus_client import milvus_manager
-from app.services.vector_embedding_service import vector_embedding_service
 
 
 # 统一使用 biz collection
@@ -18,18 +18,26 @@ COLLECTION_NAME = "biz"
 class VectorStoreManager:
     """向量存储管理器"""
 
-    def __init__(self):
+    def __init__(self, embedding_service: Embeddings):
         """初始化向量存储管理器"""
+        self.embedding_service = embedding_service
         self.vector_store = None
         self.collection_name = COLLECTION_NAME
         self._initialize_vector_store()
 
+    @property
+    def is_initialized(self) -> bool:
+        """当前 VectorStore 是否已初始化。"""
+        return self.vector_store is not None
+
     def _initialize_vector_store(self):
         """初始化 Milvus VectorStore"""
+        if self.vector_store is not None:
+            return
+
         try:
             # 必须在 PyMilvus / langchain_milvus 访问 Collection 之前建立连接，
             # 否则会出现 ConnectionNotExistException: should create connection first.
-            # （模块导入时就会执行此处，早于 FastAPI lifespan 中的 milvus_manager.connect）
             _ = milvus_manager.connect()
 
             connection_args = {
@@ -40,7 +48,7 @@ class VectorStoreManager:
             # 创建 LangChain Milvus VectorStore
             # 使用 biz collection，字段映射：text_field -> content, vector_field -> vector
             self.vector_store = Milvus(
-                embedding_function=vector_embedding_service,
+                embedding_function=self.embedding_service,
                 collection_name=self.collection_name,
                 connection_args=connection_args,
                 auto_id=False,  # 使用自定义 id
@@ -71,6 +79,7 @@ class VectorStoreManager:
             List[str]: 文档 ID 列表
         """
         try:
+            self._initialize_vector_store()
             import time
             import uuid
             start_time = time.time()
@@ -103,6 +112,7 @@ class VectorStoreManager:
             int: 删除的文档数量
         """
         try:
+            self._initialize_vector_store()
             # 使用 milvus_manager 获取已连接的 collection
             collection = milvus_manager.get_collection()
             
@@ -127,6 +137,7 @@ class VectorStoreManager:
         Returns:
             Milvus: VectorStore 实例
         """
+        self._initialize_vector_store()
         return self.vector_store
 
     def similarity_search(self, query: str, k: int = 3) -> List[Document]:
@@ -141,13 +152,10 @@ class VectorStoreManager:
             List[Document]: 相关文档列表
         """
         try:
+            self._initialize_vector_store()
             docs = self.vector_store.similarity_search(query, k=k)
             logger.debug(f"相似度搜索完成: query='{query}', 结果数={len(docs)}")
             return docs
         except Exception as e:
             logger.error(f"相似度搜索失败: {e}")
             return []
-
-
-# 全局单例
-vector_store_manager = VectorStoreManager()

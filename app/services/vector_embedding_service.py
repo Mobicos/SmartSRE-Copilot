@@ -1,13 +1,10 @@
-"""向量嵌入服务模块 - 基于 LangChain Embeddings 标准接口"""
+"""向量嵌入服务模块 - 基于 LangChain Embeddings 标准接口。"""
 
 from typing import List
 
 from langchain_core.embeddings import Embeddings
 from openai import OpenAI
 from loguru import logger
-
-from app.config import config
-
 
 class DashScopeEmbeddings(Embeddings):
     """阿里云 DashScope Text Embedding (OpenAI 兼容模式)
@@ -119,11 +116,3 @@ class DashScopeEmbeddings(Embeddings):
         except Exception as e:
             logger.error(f"查询嵌入失败: {e}")
             raise RuntimeError(f"查询嵌入失败: {e}") from e
-
-
-# 全局单例
-vector_embedding_service = DashScopeEmbeddings(
-    api_key=config.dashscope_api_key,
-    model=config.dashscope_embedding_model,
-    dimensions=1024
-)
