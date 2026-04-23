@@ -105,6 +105,7 @@ class DatabaseManager:
         else:
             connection = sqlite3.connect(self.sqlite_path, check_same_thread=False)
             connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys=ON;")
             adapter = DatabaseConnectionAdapter(connection, backend="sqlite")
 
         try:
