@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.responses import json_response
 from app.core.container import service_container
 from app.models.request import ChatRequest, ClearRequest
 from app.models.response import ApiResponse, SessionInfoResponse
@@ -43,7 +44,7 @@ async def chat(
 
         logger.info(f"[会话 {request.id}] 快速对话完成")
 
-        return JSONResponse(
+        return json_response(
             status_code=200,
             content={
                 "code": 200,
@@ -143,7 +144,7 @@ async def list_sessions(
     """列出已持久化的会话摘要。"""
     try:
         sessions = conversation_repository.list_sessions()
-        return JSONResponse(
+        return json_response(
             status_code=200,
             content={
                 "code": 200,
@@ -194,7 +195,7 @@ async def get_session_tool_events(
 ):
     """查询会话工具调用事件。"""
     try:
-        return JSONResponse(
+        return json_response(
             status_code=200,
             content={
                 "code": 200,

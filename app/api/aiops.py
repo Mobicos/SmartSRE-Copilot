@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.responses import json_response
 from app.core.container import service_container
 from app.models.aiops import AIOpsRequest
 from app.persistence import aiops_run_repository
@@ -145,7 +146,7 @@ async def get_aiops_run(
             content={"code": 404, "message": "not_found", "data": None},
         )
 
-    return JSONResponse(
+    return json_response(
         status_code=200,
         content={"code": 200, "message": "success", "data": run},
     )
@@ -164,7 +165,7 @@ async def list_aiops_run_events(
             content={"code": 404, "message": "not_found", "data": None},
         )
 
-    return JSONResponse(
+    return json_response(
         status_code=200,
         content={
             "code": 200,

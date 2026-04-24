@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from app.api.responses import json_response
 from app.config import UPLOADS_DIR
 from app.core.container import service_container
 from app.persistence import indexing_task_repository
@@ -149,7 +150,7 @@ async def get_index_task(
     if task is None:
         raise HTTPException(status_code=404, detail="索引任务不存在")
 
-    return JSONResponse(
+    return json_response(
         status_code=200,
         content={
             "code": 200,

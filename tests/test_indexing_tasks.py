@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
+
+from app.api.file import get_index_task
 from app.config import config
 from app.core.container import service_container
 from app.persistence import indexing_task_repository
+from app.security import Principal
 from app.services.indexing_task_service import indexing_task_service
 
 
@@ -81,3 +86,33 @@ def test_requeue_stale_processing_task_respects_retry_limit():
     assert task is not None
     assert task["status"] == "failed_permanently"
     assert "retry limit" in str(task["error_message"])
+
+
+async def test_get_index_task_serializes_datetime_values(monkeypatch):
+    created_at = datetime(2026, 4, 24, 10, 4, 39, 162899, tzinfo=UTC)
+    updated_at = datetime(2026, 4, 24, 10, 5, 1, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        indexing_task_repository,
+        "get_task",
+        lambda task_id: {
+            "task_id": task_id,
+            "filename": "ops.md",
+            "file_path": "/tmp/ops.md",
+            "status": "completed",
+            "attempt_count": 1,
+            "max_retries": 3,
+            "error_message": None,
+            "created_at": created_at,
+            "updated_at": updated_at,
+        },
+    )
+
+    response = await get_index_task(
+        "task-1",
+        _principal=Principal(role="admin", subject="test"),
+    )
+    payload = json.loads(response.body)
+
+    assert payload["data"]["created_at"] == created_at.isoformat()
+    assert payload["data"]["updated_at"] == updated_at.isoformat()
