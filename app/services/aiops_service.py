@@ -34,6 +34,10 @@ class AIOpsService:
         self.graph = self._build_graph()
         logger.info("Plan-Execute-Replan Service 初始化完成")
 
+    def _thread_id(self, session_id: str) -> str:
+        """Build a checkpoint thread id isolated from chat sessions."""
+        return f"{self.checkpoint_ns}:{session_id}"
+
     def _build_graph(self):
         """构建 Plan-Execute-Replan 工作流"""
         logger.info("构建工作流图...")
@@ -113,8 +117,7 @@ class AIOpsService:
             # 流式执行工作流
             config_dict = {
                 "configurable": {
-                    "thread_id": session_id,
-                    "checkpoint_ns": self.checkpoint_ns,
+                    "thread_id": self._thread_id(session_id),
                 },
                 "recursion_limit": config.aiops_recursion_limit,
             }

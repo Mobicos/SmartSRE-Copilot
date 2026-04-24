@@ -1,13 +1,9 @@
-"""
-Executor 节点：执行单个步骤
-基于 LangGraph 官方教程实现
-"""
+"""Executor node for running one AIOps plan step."""
 
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_qwq import ChatQwen
-from langgraph.prebuilt import ToolNode
 from loguru import logger
 from pydantic import SecretStr
 
@@ -18,28 +14,19 @@ from .state import PlanExecuteState
 
 
 async def executor(state: PlanExecuteState) -> dict[str, Any]:
-    """
-    执行节点：执行计划中的下一个步骤
-
-    使用 LangGraph 的 ToolNode 自动处理工具调用
-    """
-    logger.info("=== Executor：执行步骤 ===")
+    """Execute the next plan step and append the result to state."""
+    logger.info("=== Executor: executing plan step ===")
 
     plan = state.get("plan", [])
-
-    # 如果计划为空，不执行
     if not plan:
-        logger.info("计划为空，跳过执行")
+        logger.info("Plan is empty; skipping executor")
         return {}
 
-    # 取出第一个步骤
     task = plan[0]
-    logger.info(f"当前任务: {task}")
+    logger.info(f"Current task: {task}")
 
     try:
         all_tools = await tool_registry.get_diagnosis_tools()
-
-        # 创建 LLM（绑定工具）
         llm = ChatQwen(
             model=config.rag_model,
             api_key=SecretStr(config.dashscope_api_key),
@@ -47,65 +34,70 @@ async def executor(state: PlanExecuteState) -> dict[str, Any]:
         )
         llm_with_tools = llm.bind_tools(all_tools)
 
-        # 创建工具节点（自动执行工具调用）
-        tool_node = ToolNode(all_tools)
-
-        # 构建消息（只包含当前步骤，避免原始任务干扰）
         messages = [
             SystemMessage(
-                content="""你是一个能力强大的助手，负责执行具体的任务步骤。
-
-你可以使用各种工具来完成任务。对于每个步骤：
-1. 理解步骤的目标
-2. 选择合适的工具，如果已经指定了工具，则使用指定的工具
-3. 调用工具获取信息
-4. 返回执行结果
-
-注意：
-- 如果工具调用失败，请说明失败原因
-- 不要编造数据，只返回实际获取的信息
-- 执行结果要清晰、准确
-- 专注于当前步骤，不要考虑其他任务"""
+                content=(
+                    "You execute one concrete AIOps investigation step. "
+                    "Use available tools when needed. Do not invent data. "
+                    "If a tool fails, report the failure clearly and continue with the evidence you have."
+                )
             ),
-            HumanMessage(content=f"请执行以下任务: {task}"),
+            HumanMessage(content=f"Execute this task: {task}"),
         ]
 
-        # 第一步：LLM 决定是否调用工具
         llm_response = await llm_with_tools.ainvoke(messages)
-        logger.info(f"LLM 响应类型: {type(llm_response)}")
+        logger.info(f"Executor LLM response type: {type(llm_response)}")
 
-        # 第二步：如果有工具调用，执行工具
         if hasattr(llm_response, "tool_calls") and llm_response.tool_calls:
-            logger.info(f"检测到 {len(llm_response.tool_calls)} 个工具调用")
-
-            # 使用 ToolNode 自动执行工具
-            messages.append(llm_response)
-            tool_messages = await tool_node.ainvoke({"messages": messages})
-
-            # 第三步：将工具结果返回给 LLM 生成最终答案
-            messages.extend(tool_messages["messages"])
-            final_response = await llm_with_tools.ainvoke(messages)
+            logger.info(f"Detected {len(llm_response.tool_calls)} tool call(s)")
+            tool_results = await _execute_tool_calls(llm_response.tool_calls, all_tools)
+            final_response = await llm.ainvoke(
+                [
+                    *messages,
+                    HumanMessage(content="Tool execution results:\n" + "\n\n".join(tool_results)),
+                ]
+            )
             result = (
                 final_response.content
                 if hasattr(final_response, "content")
                 else str(final_response)
             )
         else:
-            # 没有工具调用，直接使用 LLM 的输出
-            logger.info("LLM 未调用工具，直接返回结果")
+            logger.info("Executor LLM did not call tools; using direct response")
             result = llm_response.content if hasattr(llm_response, "content") else str(llm_response)
 
-        logger.info(f"步骤执行完成，结果长度: {len(result)}")
-
-        # 返回更新：移除已执行的步骤，添加执行历史
-        return {
-            "plan": plan[1:],  # 移除第一个步骤
-            "past_steps": [(task, result)],  # 使用 operator.add 追加
-        }
-
-    except Exception as e:
-        logger.error(f"执行步骤失败: {e}", exc_info=True)
+        logger.info(f"Plan step completed; result length={len(result)}")
         return {
             "plan": plan[1:],
-            "past_steps": [(task, f"执行失败: {str(e)}")],
+            "past_steps": [(task, result)],
         }
+
+    except Exception as exc:
+        logger.exception(f"Plan step failed: {exc}")
+        return {
+            "plan": plan[1:],
+            "past_steps": [(task, f"execution failed: {exc}")],
+        }
+
+
+async def _execute_tool_calls(tool_calls: list[Any], tools: list[Any]) -> list[str]:
+    """Execute selected tools directly and keep failures scoped to the current step."""
+    tool_by_name = {str(getattr(tool, "name", "")): tool for tool in tools}
+    results: list[str] = []
+
+    for tool_call in tool_calls:
+        tool_name = str(tool_call.get("name", "unknown"))
+        tool_args = tool_call.get("args", {})
+        tool = tool_by_name.get(tool_name)
+        if tool is None:
+            results.append(f"{tool_name}: tool not found")
+            continue
+
+        try:
+            raw_result = await tool.ainvoke(tool_args)
+            results.append(f"{tool_name}({tool_args}) => {raw_result}")
+        except Exception as exc:
+            logger.warning(f"Tool {tool_name} execution failed: {exc}")
+            results.append(f"{tool_name}({tool_args}) => failed: {exc}")
+
+    return results

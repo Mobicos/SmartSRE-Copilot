@@ -5,6 +5,7 @@
 """
 
 import json
+import re
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, cast
@@ -25,6 +26,7 @@ from typing_extensions import TypedDict
 
 from app.agent.tool_registry import tool_registry
 from app.config import config
+from app.tools import retrieve_knowledge
 
 # 阿里千问大模型和langchain集成参考： https://docs.langchain.com/oss/python/integrations/chat/qwen
 # 注意：需要配置环境变量 DASHSCOPE_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1 否则默认访问的是新加坡站点
@@ -223,6 +225,13 @@ class RagAgentService:
                 )
 
                 tool_events = self._extract_tool_events_from_messages(messages_result)
+                fallback_tool_event = self._extract_text_tool_code_event(answer)
+                if fallback_tool_event is not None:
+                    answer = await self._answer_from_text_tool_code(
+                        question,
+                        fallback_tool_event,
+                    )
+                    tool_events.append(fallback_tool_event)
                 if tool_events:
                     logger.info(
                         f"[会话 {session_id}] Agent 调用了工具: "
@@ -238,6 +247,68 @@ class RagAgentService:
         except Exception as e:
             logger.error(f"[会话 {session_id}] RAG Agent 查询失败（非流式）: {e}")
             raise
+
+    def _extract_text_tool_code_event(self, answer: str) -> dict[str, Any] | None:
+        """Parse Qwen-style text tool code when native tool calling is not emitted."""
+        match = re.search(r"<tool_code>\s*(\{.*?\})\s*</tool_code>", answer, re.DOTALL)
+        if match is None:
+            return None
+
+        try:
+            tool_call = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return None
+
+        tool_name = str(tool_call.get("name", ""))
+        if tool_name != "retrieve_knowledge":
+            return None
+
+        arguments = tool_call.get("arguments")
+        if not isinstance(arguments, dict):
+            return None
+
+        query = str(arguments.get("query", "")).strip()
+        if not query:
+            return None
+
+        logger.warning("Detected text-form retrieve_knowledge tool call; executing fallback")
+        return {
+            "toolName": tool_name,
+            "eventType": "call",
+            "status": "fallback",
+            "payload": {"query": query},
+        }
+
+    async def _answer_from_text_tool_code(
+        self,
+        question: str,
+        tool_event: dict[str, Any],
+    ) -> str:
+        """Execute a text-form knowledge tool call and synthesize a user-facing answer."""
+        payload = tool_event.get("payload")
+        query = str(payload.get("query", "")) if isinstance(payload, dict) else ""
+        context = await retrieve_knowledge.ainvoke({"query": query})
+        context_text = context[0] if isinstance(context, tuple) else str(context)
+
+        response = await self.model.ainvoke(
+            [
+                SystemMessage(
+                    content=(
+                        "Answer the user using only the provided knowledge base context. "
+                        "Do not include tool code or JSON."
+                    )
+                ),
+                HumanMessage(
+                    content=(
+                        f"User question:\n{question}\n\n"
+                        f"Knowledge base context:\n{context_text}\n\n"
+                        "Return a concise answer."
+                    )
+                ),
+            ]
+        )
+        content = response.content if hasattr(response, "content") else str(response)
+        return content if isinstance(content, str) else str(content)
 
     async def query_stream(
         self,
