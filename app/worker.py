@@ -25,7 +25,10 @@ async def run_worker() -> None:
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _stop)
+        try:
+            loop.add_signal_handler(sig, _stop)
+        except NotImplementedError:
+            signal.signal(sig, lambda *_args: _stop())
 
     await stop_event.wait()
     await task_dispatcher.shutdown()

@@ -144,7 +144,7 @@ async def get_mcp_client(
     """
     global _mcp_client
 
-    normalized_servers = _normalize_servers(servers or DEFAULT_MCP_SERVERS)
+    normalized_servers = _normalize_servers(DEFAULT_MCP_SERVERS if servers is None else servers)
     if not normalized_servers:
         raise RuntimeError("没有可用的 MCP 服务配置")
 
@@ -224,7 +224,7 @@ async def get_mcp_tools_with_fallback(
     force_refresh: bool = False,
 ) -> list[Any]:
     """按服务逐个加载 MCP 工具，单个服务失败时自动降级。"""
-    normalized_servers = _normalize_servers(servers or DEFAULT_MCP_SERVERS)
+    normalized_servers = _normalize_servers(DEFAULT_MCP_SERVERS if servers is None else servers)
     if not normalized_servers:
         logger.info("未配置可用的 MCP 服务，跳过 MCP 工具加载")
         return []
