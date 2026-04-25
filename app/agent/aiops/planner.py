@@ -46,6 +46,8 @@ planner_prompt = ChatPromptTemplate.from_messages(
                 对于给定的任务，请创建一个简单的、逐步的计划来完成它。计划应该：
                 - 将任务分解为逻辑上独立的步骤
                 - 每个步骤应该明确使用哪些工具(如果需要工具的话)来获取信息, 最好能同时提供工具执行所需要的参数
+                - 只能使用“可用工具列表”中明确列出的工具，禁止假设或编造不存在的工具
+                - 如果缺少监控、日志、告警类 MCP 工具，不要生成诊断执行计划，应说明外部工具不可用
                 - 步骤之间应该有清晰的依赖关系
                 - 步骤描述要具体、可操作
                 - **如果有相关经验文档，请参考其中的方法和步骤制定计划**
@@ -94,6 +96,23 @@ async def planner(state: PlanExecuteState) -> dict[str, Any]:
 
         # 步骤2: 获取可用工具列表
         all_tools = await tool_registry.get_diagnosis_tools()
+        local_tool_names = {
+            str(getattr(tool, "name", ""))
+            for tool in tool_registry.get_local_tools("diagnosis")
+        }
+        mcp_tool_count = sum(
+            1
+            for tool in all_tools
+            if str(getattr(tool, "name", "")) not in local_tool_names
+        )
+        if mcp_tool_count == 0:
+            message = (
+                "诊断所需的 MCP 监控/日志/告警工具未成功加载，"
+                f"当前只可用本地工具: {', '.join(sorted(local_tool_names))}。"
+                "请先确认 MCP SSE 地址可用，或适当调大 MCP_TOOLS_LOAD_TIMEOUT_SECONDS 后重试。"
+            )
+            logger.warning(message)
+            return {"plan": [], "response": message}
 
         # 格式化工具描述
         tools_description = format_tools_description(all_tools)

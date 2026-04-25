@@ -13,6 +13,8 @@ class DashScopeEmbeddings(Embeddings):
     - embed_query(text: str) → List[float]: 嵌入单个查询
     """
 
+    MAX_BATCH_SIZE = 10
+
     def __init__(
         self,
         api_key: str,
@@ -65,13 +67,19 @@ class DashScopeEmbeddings(Embeddings):
 
         try:
             logger.info(f"批量嵌入 {len(texts)} 个文档")
+            embeddings: list[list[float]] = []
 
-            # 批量调用 API
-            response = self.client.embeddings.create(
-                model=self.model, input=texts, dimensions=self.dimensions, encoding_format="float"
-            )
+            # DashScope embedding 接口当前单次最多支持 10 条输入。
+            for batch_start in range(0, len(texts), self.MAX_BATCH_SIZE):
+                batch = texts[batch_start : batch_start + self.MAX_BATCH_SIZE]
+                response = self.client.embeddings.create(
+                    model=self.model,
+                    input=batch,
+                    dimensions=self.dimensions,
+                    encoding_format="float",
+                )
+                embeddings.extend(item.embedding for item in response.data)
 
-            embeddings = [item.embedding for item in response.data]
             logger.debug(f"批量嵌入完成, 维度: {len(embeddings[0])}")
 
             return embeddings

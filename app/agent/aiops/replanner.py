@@ -126,6 +126,10 @@ async def replanner(state: PlanExecuteState) -> dict[str, Any]:
     plan = state.get("plan", [])
     past_steps = state.get("past_steps", [])
 
+    if state.get("response"):
+        logger.info("已有最终响应，跳过重新规划")
+        return {}
+
     logger.info(f"剩余计划步骤: {len(plan)}")
     logger.info(f"已执行步骤: {len(past_steps)}")
 
