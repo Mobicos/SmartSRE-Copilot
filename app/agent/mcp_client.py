@@ -84,6 +84,8 @@ def _normalize_servers(
     for server_name, server_config in servers.items():
         transport = server_config.get("transport", "").strip()
         url = server_config.get("url", "").strip()
+        if not transport and not url:
+            continue
         if not transport or not url:
             logger.warning(f"跳过无效 MCP 配置: {server_name}")
             continue
