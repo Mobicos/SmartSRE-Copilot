@@ -8,7 +8,7 @@ from loguru import logger
 
 from app.config import config
 from app.infrastructure import redis_manager
-from app.persistence import indexing_task_repository
+from app.platform.persistence.repositories.indexing import indexing_task_repository
 from app.services.indexing_task_service import indexing_task_service
 
 

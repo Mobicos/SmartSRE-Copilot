@@ -4,7 +4,7 @@ from loguru import logger
 
 from app.config import config
 from app.core.container import service_container
-from app.persistence import indexing_task_repository
+from app.platform.persistence.repositories.indexing import indexing_task_repository
 
 
 class IndexingTaskService:

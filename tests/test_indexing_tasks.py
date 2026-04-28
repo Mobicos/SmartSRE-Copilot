@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 
-from app.api.file import get_index_task
+from app.api.routes.file import get_index_task
 from app.config import config
 from app.core.container import service_container
 from app.persistence import indexing_task_repository

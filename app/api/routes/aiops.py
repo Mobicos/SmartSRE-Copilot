@@ -19,7 +19,7 @@ router = APIRouter()
 @router.post("/aiops")
 async def diagnose_stream(
     request: AIOpsRequest,
-    _principal: Principal = Depends(require_capability("aiops:run")),
+    principal: Principal = Depends(require_capability("aiops:run")),
 ):
     """
     AIOps 故障诊断接口（流式 SSE）
@@ -130,7 +130,7 @@ async def diagnose_stream(
     session_id = request.session_id or "default"
     aiops_application_service = service_container.get_aiops_application_service()
     logger.info(f"[会话 {session_id}] 收到 AIOps 诊断请求（流式）")
-    return EventSourceResponse(aiops_application_service.stream_diagnosis(session_id))
+    return EventSourceResponse(aiops_application_service.stream_diagnosis(session_id, principal))
 
 
 @router.get("/aiops/runs/{run_id}")

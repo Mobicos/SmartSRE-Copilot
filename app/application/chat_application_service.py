@@ -7,7 +7,10 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Any, cast
 
-from app.persistence.repositories import ChatToolEventRepository, ConversationRepository
+from app.platform.persistence.repositories.conversation import (
+    ChatToolEventRepository,
+    ConversationRepository,
+)
 from app.services.rag_agent_service import RagAgentService
 
 

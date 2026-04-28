@@ -143,6 +143,110 @@ SQLITE_SCHEMA_STATEMENTS = [
         PRIMARY KEY(thread_id, checkpoint_ns, checkpoint_id, task_id, write_idx)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS workspaces (
+        workspace_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_bases (
+        knowledge_base_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        version TEXT NOT NULL DEFAULT '0.0.1',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(workspace_id) REFERENCES workspaces(workspace_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS scenes (
+        scene_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        agent_config TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(workspace_id) REFERENCES workspaces(workspace_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS scene_knowledge_bases (
+        scene_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        PRIMARY KEY(scene_id, knowledge_base_id),
+        FOREIGN KEY(scene_id) REFERENCES scenes(scene_id) ON DELETE CASCADE,
+        FOREIGN KEY(knowledge_base_id) REFERENCES knowledge_bases(knowledge_base_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS scene_tools (
+        scene_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        PRIMARY KEY(scene_id, tool_name),
+        FOREIGN KEY(scene_id) REFERENCES scenes(scene_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS tool_policies (
+        tool_name TEXT PRIMARY KEY,
+        scope TEXT NOT NULL DEFAULT 'diagnosis',
+        risk_level TEXT NOT NULL DEFAULT 'low',
+        capability TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        approval_required INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_runs (
+        run_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        scene_id TEXT,
+        session_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        goal TEXT NOT NULL,
+        final_report TEXT,
+        error_message TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(workspace_id) REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+        FOREIGN KEY(scene_id) REFERENCES scenes(scene_id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        message TEXT NOT NULL,
+        payload TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(run_id) REFERENCES agent_runs(run_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_agent_events_run_created
+    ON agent_events(run_id, created_at, id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_feedback (
+        feedback_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        rating TEXT NOT NULL,
+        comment TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(run_id) REFERENCES agent_runs(run_id) ON DELETE CASCADE
+    )
+    """,
 ]
 
 
@@ -157,4 +261,13 @@ REQUIRED_TABLES = (
     "agent_checkpoints",
     "agent_checkpoint_blobs",
     "agent_checkpoint_writes",
+    "workspaces",
+    "knowledge_bases",
+    "scenes",
+    "scene_knowledge_bases",
+    "scene_tools",
+    "tool_policies",
+    "agent_runs",
+    "agent_events",
+    "agent_feedback",
 )
