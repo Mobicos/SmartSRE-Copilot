@@ -1,6 +1,6 @@
 """FastAPI 应用入口
 
-主应用程序，配置路由、中间件、静态文件等
+主应用程序，配置路由、中间件等
 """
 
 from contextlib import asynccontextmanager
@@ -8,12 +8,10 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from app.api import aiops, chat, file, health
-from app.config import STATIC_DIR, config
+from app.config import config
 from app.core.container import service_container
 from app.core.milvus_client import milvus_manager
 from app.persistence import audit_log_repository, database_manager
@@ -146,16 +144,9 @@ app.include_router(chat.router, prefix="/api", tags=["对话"])
 app.include_router(file.router, prefix="/api", tags=["文件管理"])
 app.include_router(aiops.router, prefix="/api", tags=["AIOps智能运维"])
 
-# 挂载静态文件
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
 @app.get("/")
 async def root():
-    """返回首页"""
-    index_path = STATIC_DIR / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
+    """返回 API 根信息。"""
     return {
         "message": f"Welcome to {config.app_name} API",
         "version": config.app_version,
