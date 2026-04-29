@@ -25,6 +25,7 @@ from app.persistence import (
     aiops_run_repository,
     chat_tool_event_repository,
     conversation_repository,
+    indexing_task_repository,
     scene_repository,
     tool_policy_repository,
     workspace_repository,
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from app.application.aiops_application_service import AIOpsApplicationService
     from app.application.chat import RagAgentService
     from app.application.chat_application_service import ChatApplicationService
+    from app.application.indexing import IndexingTaskService
     from app.application.native_agent_application_service import NativeAgentApplicationService
 
 
@@ -56,6 +58,7 @@ class AppContainer:
         self._document_splitter_service: DocumentSplitterService | None = None
         self._vector_index_service: VectorIndexService | None = None
         self._rag_agent_service: RagAgentService | None = None
+        self._indexing_task_service: IndexingTaskService | None = None
         self._tool_catalog: ToolCatalog | None = None
         self._tool_executor: ToolExecutor | None = None
         self._agent_runtime: AgentRuntime | None = None
@@ -121,6 +124,18 @@ class AppContainer:
                 checkpointer=checkpoint_saver,
             )
         return self._rag_agent_service
+
+    def get_indexing_task_service(self) -> IndexingTaskService:
+        """获取索引任务应用服务。"""
+        if self._indexing_task_service is None:
+            from app.application.indexing import IndexingTaskService
+
+            self._indexing_task_service = IndexingTaskService(
+                repository=indexing_task_repository,
+                vector_indexer_provider=lambda: self.get_vector_index_service(),
+                max_retries_provider=lambda: config.indexing_task_max_retries,
+            )
+        return self._indexing_task_service
 
     def get_tool_catalog(self) -> ToolCatalog:
         """获取原生 Agent 工具目录。"""
@@ -235,6 +250,7 @@ class AppContainer:
         self._agent_runtime = None
         self._tool_executor = None
         self._tool_catalog = None
+        self._indexing_task_service = None
         self._rag_agent_service = None
         self._aiops_application_service = None
         self._chat_application_service = None

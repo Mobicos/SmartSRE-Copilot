@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from loguru import logger
 
-from app.application.indexing import indexing_task_service
 from app.config import config
 from app.infrastructure import redis_manager
 from app.platform.persistence.repositories.indexing import indexing_task_repository
+
+IndexingTaskProcessor = Callable[[str, str], str]
+
+
+def _default_indexing_task_processor(task_id: str, file_path: str) -> str:
+    from app.core.container import service_container
+
+    return service_container.get_indexing_task_service().process_task(task_id, file_path)
 
 
 class LocalTaskDispatcher:
@@ -19,10 +27,15 @@ class LocalTaskDispatcher:
     在 `detached` 模式下，主服务只负责入队，独立 worker 进程负责消费。
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        indexing_task_processor: IndexingTaskProcessor | None = None,
+    ) -> None:
         self._wake_event = asyncio.Event()
         self._worker_task: asyncio.Task[None] | None = None
         self._started = False
+        self._indexing_task_processor = indexing_task_processor or _default_indexing_task_processor
 
     async def start(self) -> None:
         """启动任务调度器并恢复未完成任务。"""
@@ -77,7 +90,7 @@ class LocalTaskDispatcher:
         while self._started:
             task = indexing_task_repository.claim_next_queued_task()
             if task is not None:
-                result = indexing_task_service.process_task(task["task_id"], task["file_path"])
+                result = self._indexing_task_processor(task["task_id"], task["file_path"])
                 if result == "queued":
                     self._wake_event.set()
                 continue
@@ -110,7 +123,7 @@ class LocalTaskDispatcher:
                 logger.info(f"任务已被其他 worker 处理或状态已变化，跳过: {task_id}")
                 continue
 
-            result = indexing_task_service.process_task(task_id, file_path)
+            result = self._indexing_task_processor(task_id, file_path)
             if result == "queued":
                 redis_manager.enqueue_json(
                     config.redis_task_queue_name,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def test_native_agent_runtime_has_dedicated_platform_package():
     from app.agent_runtime import AgentRuntime, ToolCatalog, ToolExecutor
@@ -68,11 +70,19 @@ def test_knowledge_infrastructure_lives_under_infrastructure_package():
 
 
 def test_indexing_task_orchestration_has_explicit_application_and_infrastructure_layers():
-    from app.application.indexing import IndexingTaskService, indexing_task_service
+    from app.application.indexing import IndexingTaskService
+    from app.core.container import service_container
     from app.infrastructure.tasks import LocalTaskDispatcher, task_dispatcher
 
-    assert indexing_task_service.__class__ is IndexingTaskService
+    assert service_container.get_indexing_task_service().__class__ is IndexingTaskService
     assert task_dispatcher.__class__ is LocalTaskDispatcher
+
+
+def test_indexing_task_application_service_does_not_import_global_container():
+    source = Path("app/application/indexing/service.py").read_text(encoding="utf-8")
+
+    assert "app.core.container" not in source
+    assert "service_container" not in source
 
 
 def test_native_agent_repositories_live_in_platform_persistence_package():

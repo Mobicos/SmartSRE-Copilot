@@ -1,5 +1,9 @@
 """Indexing application use cases."""
 
-from app.application.indexing.service import IndexingTaskService, indexing_task_service
+from app.application.indexing.service import (
+    IndexingTaskRepositoryPort,
+    IndexingTaskService,
+    VectorIndexerPort,
+)
 
-__all__ = ["IndexingTaskService", "indexing_task_service"]
+__all__ = ["IndexingTaskRepositoryPort", "IndexingTaskService", "VectorIndexerPort"]

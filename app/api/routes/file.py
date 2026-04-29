@@ -5,7 +5,6 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.api.responses import json_response
-from app.application.indexing import indexing_task_service
 from app.config import UPLOADS_DIR
 from app.core.container import service_container
 from app.infrastructure.tasks import task_dispatcher
@@ -75,7 +74,10 @@ async def upload_file(
         file_path.write_bytes(content)
 
         logger.info(f"文件上传成功: {file_path}")
-        task_id = indexing_task_service.submit_task(safe_filename, str(file_path))
+        task_id = service_container.get_indexing_task_service().submit_task(
+            safe_filename,
+            str(file_path),
+        )
         await task_dispatcher.enqueue_indexing_task(
             task_id,
             str(file_path),
