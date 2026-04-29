@@ -14,7 +14,6 @@ from app.platform.persistence.repositories.native_agent import (
     WorkspaceRepository,
 )
 from app.security.auth import Principal
-from app.services.aiops_service import AIOpsService
 
 
 class AIOpsApplicationService:
@@ -23,14 +22,12 @@ class AIOpsApplicationService:
     def __init__(
         self,
         *,
-        aiops_service: AIOpsService,
         agent_runtime: AgentRuntime,
         aiops_run_repository: AIOpsRunRepository,
         conversation_repository: ConversationRepository,
         workspace_repository: WorkspaceRepository,
         scene_repository: SceneRepository,
     ) -> None:
-        self._aiops_service = aiops_service
         self._agent_runtime = agent_runtime
         self._aiops_run_repository = aiops_run_repository
         self._conversation_repository = conversation_repository

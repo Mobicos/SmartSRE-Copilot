@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any
 
+from app.agent_runtime.context import KnowledgeContextProvider
 from app.agent_runtime.events import AgentRuntimeEvent
 from app.agent_runtime.executor import AgentToolExecutor
 from app.agent_runtime.planner import AgentPlanner
@@ -41,6 +42,7 @@ class AgentRuntime:
         policy_gate: ToolPolicyGate | None = None,
         action_executor: AgentToolExecutor | None = None,
         synthesizer: ReportSynthesizer | None = None,
+        knowledge_context_provider: KnowledgeContextProvider | None = None,
     ) -> None:
         self._scene_store = scene_store or scene_repository
         self._run_store = run_store or agent_run_repository
@@ -51,6 +53,7 @@ class AgentRuntime:
         self._policy_gate = policy_gate or ToolPolicyGate(policy_store=self._policy_store)
         self._action_executor = action_executor or AgentToolExecutor(tool_executor=tool_executor)
         self._synthesizer = synthesizer or ReportSynthesizer()
+        self._knowledge_context_provider = knowledge_context_provider or KnowledgeContextProvider()
 
     async def run(
         self,
@@ -92,10 +95,23 @@ class AgentRuntime:
             message=state.hypothesis.summary,
             payload={"hypothesis": state.hypothesis.summary},
         )
+        knowledge_context = self._knowledge_context_provider.build_context(scene)
+        state.set_knowledge_context(knowledge_context)
+        if knowledge_context.has_knowledge():
+            yield self._record_event(
+                run_id,
+                event_type="knowledge_context",
+                stage="context",
+                message=knowledge_context.summary,
+                payload=knowledge_context.to_event_payload(),
+            )
 
         selected_tool_names = self._planner.select_tool_names(scene)
         if not selected_tool_names:
-            final_report = self._synthesizer.unavailable_report(goal)
+            final_report = self._synthesizer.unavailable_report(
+                goal,
+                state.knowledge_context,
+            )
             self._run_store.update_run(run_id, status="completed", final_report=final_report)
             yield self._record_event(
                 run_id,
@@ -121,7 +137,10 @@ class AgentRuntime:
         }
 
         if not tool_by_name:
-            final_report = self._synthesizer.unavailable_report(goal)
+            final_report = self._synthesizer.unavailable_report(
+                goal,
+                state.knowledge_context,
+            )
             self._run_store.update_run(run_id, status="completed", final_report=final_report)
             yield self._record_event(
                 run_id,

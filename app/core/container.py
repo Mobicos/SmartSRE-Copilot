@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from app.application.aiops_application_service import AIOpsApplicationService
     from app.application.chat_application_service import ChatApplicationService
     from app.application.native_agent_application_service import NativeAgentApplicationService
-    from app.services.aiops_service import AIOpsService
     from app.services.rag_agent_service import RagAgentService
 
 
@@ -55,7 +54,6 @@ class AppContainer:
         self._document_splitter_service: DocumentSplitterService | None = None
         self._vector_index_service: VectorIndexService | None = None
         self._rag_agent_service: RagAgentService | None = None
-        self._aiops_service: AIOpsService | None = None
         self._tool_catalog: ToolCatalog | None = None
         self._tool_executor: ToolExecutor | None = None
         self._agent_runtime: AgentRuntime | None = None
@@ -122,15 +120,6 @@ class AppContainer:
             )
         return self._rag_agent_service
 
-    def get_aiops_service(self) -> AIOpsService:
-        """获取 AIOps 工作流运行时服务。"""
-        if self._aiops_service is None:
-            logger.info("初始化 AIOps 服务...")
-            from app.services.aiops_service import AIOpsService
-
-            self._aiops_service = AIOpsService(checkpointer=checkpoint_saver)
-        return self._aiops_service
-
     def get_tool_catalog(self) -> ToolCatalog:
         """获取原生 Agent 工具目录。"""
         if self._tool_catalog is None:
@@ -178,7 +167,6 @@ class AppContainer:
             from app.application.aiops_application_service import AIOpsApplicationService
 
             self._aiops_application_service = AIOpsApplicationService(
-                aiops_service=self.get_aiops_service(),
                 agent_runtime=self.get_agent_runtime(),
                 aiops_run_repository=aiops_run_repository,
                 conversation_repository=conversation_repository,
@@ -212,7 +200,7 @@ class AppContainer:
             self._vector_store_manager is not None and self._vector_store_manager.is_initialized
         )
         rag_ready = self._rag_agent_service is not None
-        aiops_ready = self._aiops_service is not None
+        aiops_ready = self._aiops_application_service is not None
         checkpoint_ready = checkpoint_saver is not None
 
         return {
@@ -230,7 +218,7 @@ class AppContainer:
             ),
             "aiops": ServiceHealth(
                 status="ready" if aiops_ready else "not_initialized",
-                message="AIOps 服务已初始化" if aiops_ready else "AIOps 服务尚未初始化",
+                message="AIOps 应用服务已初始化" if aiops_ready else "AIOps 应用服务尚未初始化",
             ),
             "checkpoint": ServiceHealth(
                 status="ready" if checkpoint_ready else "not_initialized",
@@ -242,7 +230,6 @@ class AppContainer:
 
     def reset(self) -> None:
         """重置容器中的运行时依赖引用。"""
-        self._aiops_service = None
         self._agent_runtime = None
         self._tool_executor = None
         self._tool_catalog = None

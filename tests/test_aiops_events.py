@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.infrastructure import checkpoint_saver
-from app.services.aiops_service import AIOpsService
+from app.legacy.aiops import AIOpsService
 
 
 def test_aiops_planner_event_reports_plan_size():

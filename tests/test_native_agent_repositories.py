@@ -1,5 +1,13 @@
 from __future__ import annotations
 
+from app.domains.native_agent import (
+    AgentEvent,
+    AgentRun,
+    KnowledgeBase,
+    Scene,
+    ToolPolicy,
+    Workspace,
+)
 from app.persistence import (
     agent_feedback_repository,
     agent_run_repository,
@@ -42,6 +50,16 @@ def test_workspace_scene_and_knowledge_base_repositories_persist_product_closure
     assert scene["tools"] == ["SearchLog"]
     assert scene["agent_config"] == {"mode": "diagnosis"}
 
+    workspace_entity = Workspace.from_record(workspaces[0])
+    knowledge_base_entity = KnowledgeBase.from_record(scene["knowledge_bases"][0])
+    scene_entity = Scene.from_record(scene)
+
+    assert workspace_entity.id == workspace_id
+    assert knowledge_base_entity.name == "CLB Runbook"
+    assert scene_entity.knowledge_bases[0].id == knowledge_base_id
+    assert scene_entity.tool_names == ["SearchLog"]
+    assert scene_entity.to_dict()["agent_config"] == {"mode": "diagnosis"}
+
 
 def test_tool_policy_repository_upserts_and_lists_policy():
     policy = tool_policy_repository.upsert_policy(
@@ -60,6 +78,12 @@ def test_tool_policy_repository_upserts_and_lists_policy():
     assert policies[0]["tool_name"] == "SearchLog"
     assert policies[0]["enabled"] is False
     assert policies[0]["approval_required"] is True
+
+    policy_entity = ToolPolicy.from_record(policy)
+
+    assert policy_entity.tool_name == "SearchLog"
+    assert policy_entity.requires_approval() is True
+    assert policy_entity.to_dict()["enabled"] is False
 
 
 def test_agent_run_repository_persists_ordered_trajectory_and_feedback():
@@ -99,3 +123,11 @@ def test_agent_run_repository_persists_ordered_trajectory_and_feedback():
     assert [event["type"] for event in events] == ["hypothesis", "tool_result"]
     assert events[0]["payload"] == {"hypothesis": "cpu"}
     assert feedback[0]["rating"] == "up"
+
+    run_entity = AgentRun.from_record(run)
+    event_entity = AgentEvent.from_record(events[0])
+
+    assert run_entity.id == run_id
+    assert run_entity.is_completed() is True
+    assert event_entity.type == "hypothesis"
+    assert event_entity.payload == {"hypothesis": "cpu"}

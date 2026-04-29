@@ -10,6 +10,7 @@ from app.agent_runtime import (
     AgentRuntimeEvent,
     EvidenceItem,
     Hypothesis,
+    KnowledgeContextProvider,
     ReportSynthesizer,
     ToolAction,
     ToolPolicyGate,
@@ -17,6 +18,7 @@ from app.agent_runtime import (
 )
 from app.persistence import (
     agent_run_repository,
+    knowledge_base_repository,
     scene_repository,
     tool_policy_repository,
     workspace_repository,
@@ -88,6 +90,7 @@ class MemoryPolicyStore:
 
 def test_agent_runtime_core_components_shape_agent_loop():
     planner = AgentPlanner()
+    knowledge_provider = KnowledgeContextProvider()
     policy_gate = ToolPolicyGate(
         policy_store=MemoryPolicyStore(
             {
@@ -105,6 +108,18 @@ def test_agent_runtime_core_components_shape_agent_loop():
     synthesizer = ReportSynthesizer()
 
     state = planner.create_initial_state("diagnose latency")
+    knowledge_context = knowledge_provider.build_context(
+        {
+            "knowledge_bases": [
+                {
+                    "id": "kb-1",
+                    "name": "Runbook",
+                    "description": "CLB incident runbook",
+                    "version": "1.0.0",
+                }
+            ]
+        }
+    )
     action = policy_gate.create_action("SearchLog", goal=state.goal)
 
     assert planner.select_tool_names({"tools": ["SearchLog"]}) == ["SearchLog"]
@@ -112,6 +127,17 @@ def test_agent_runtime_core_components_shape_agent_loop():
         state.hypothesis.summary
         == "围绕目标“diagnose latency”优先验证告警、日志、指标和近期变更证据。"
     )
+    assert knowledge_context.to_event_payload() == {
+        "knowledge_bases": [
+            {
+                "id": "kb-1",
+                "name": "Runbook",
+                "description": "CLB incident runbook",
+                "version": "1.0.0",
+            }
+        ],
+        "summary": "已加载 1 个知识库: Runbook",
+    }
     assert action.approval_state == "required"
     assert action.policy_snapshot.risk_level == "high"
     assert "暂无工具证据" in synthesizer.build_report(state)
@@ -209,6 +235,49 @@ async def test_agent_runtime_reports_unavailable_external_tools_without_fabricat
     assert "外部 MCP 工具不可用" in events[-1].final_report
     assert agent_run_repository.list_events(events[-1].run_id)[0]["type"] == "run_started"
     assert events[-1].to_dict()["type"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_records_scene_knowledge_context_in_trajectory_and_report():
+    workspace_id = workspace_repository.create_workspace(name="SRE")
+    knowledge_base_id = knowledge_base_repository.create_knowledge_base(
+        workspace_id,
+        name="CLB Runbook",
+        description="CLB incident response",
+        version="1.2.0",
+    )
+    scene_id = scene_repository.create_scene(
+        workspace_id,
+        name="Default",
+        knowledge_base_ids=[knowledge_base_id],
+    )
+    runtime = AgentRuntime(tool_catalog=StaticCatalog([]), tool_executor=StaticExecutor())
+
+    events = [
+        event
+        async for event in runtime.run(
+            scene_id=scene_id,
+            session_id="session-1",
+            goal="diagnose current alerts",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+
+    stored_events = agent_run_repository.list_events(events[-1].run_id)
+    knowledge_event = next(event for event in stored_events if event["type"] == "knowledge_context")
+
+    assert knowledge_event["payload"] == {
+        "knowledge_bases": [
+            {
+                "id": knowledge_base_id,
+                "name": "CLB Runbook",
+                "description": "CLB incident response",
+                "version": "1.2.0",
+            }
+        ],
+        "summary": "已加载 1 个知识库: CLB Runbook",
+    }
+    assert "CLB Runbook" in events[-1].final_report
 
 
 @pytest.mark.asyncio

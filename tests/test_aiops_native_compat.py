@@ -15,10 +15,6 @@ from app.persistence import (
 from app.security.auth import Principal
 
 
-class UnusedAIOpsService:
-    pass
-
-
 class StaticRuntime:
     async def run(
         self,
@@ -46,7 +42,6 @@ class StaticRuntime:
 @pytest.mark.asyncio
 async def test_legacy_aiops_stream_uses_native_runtime_and_preserves_complete_event():
     service = AIOpsApplicationService(
-        aiops_service=UnusedAIOpsService(),
         agent_runtime=StaticRuntime(),
         aiops_run_repository=aiops_run_repository,
         conversation_repository=conversation_repository,

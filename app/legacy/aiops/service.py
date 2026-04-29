@@ -10,13 +10,13 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 from loguru import logger
 
-from app.agent.aiops import (
+from app.config import config
+from app.legacy.aiops.workflow import (
     PlanExecuteState,
     executor as aiops_executor,
     planner as aiops_planner,
     replanner as aiops_replanner,
 )
-from app.config import config
 
 # 节点名称常量
 NODE_PLANNER = "planner"

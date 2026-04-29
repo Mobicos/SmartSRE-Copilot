@@ -18,6 +18,39 @@ class Hypothesis:
 
 
 @dataclass(frozen=True)
+class KnowledgeContext:
+    """Scene-scoped knowledge metadata loaded for an Agent run."""
+
+    knowledge_bases: list[dict[str, Any]]
+
+    @classmethod
+    def empty(cls) -> KnowledgeContext:
+        return cls(knowledge_bases=[])
+
+    @property
+    def summary(self) -> str:
+        if not self.knowledge_bases:
+            return "未配置知识库上下文"
+        names = ", ".join(str(item["name"]) for item in self.knowledge_bases)
+        return f"已加载 {len(self.knowledge_bases)} 个知识库: {names}"
+
+    def has_knowledge(self) -> bool:
+        return bool(self.knowledge_bases)
+
+    def to_event_payload(self) -> dict[str, Any]:
+        return {
+            "knowledge_bases": self.knowledge_bases,
+            "summary": self.summary,
+        }
+
+    def to_report_lines(self) -> list[str]:
+        return [
+            f"- {item['name']} ({item['version']}): {item.get('description') or '无描述'}"
+            for item in self.knowledge_bases
+        ]
+
+
+@dataclass(frozen=True)
 class ToolPolicySnapshot:
     """Tool governance policy captured at planning time."""
 
@@ -155,6 +188,7 @@ class AgentRunState:
 
     goal: str
     hypothesis: Hypothesis
+    knowledge_context: KnowledgeContext = field(default_factory=KnowledgeContext.empty)
     actions: list[ToolAction] = field(default_factory=list)
     evidence: list[EvidenceItem] = field(default_factory=list)
 
@@ -164,6 +198,9 @@ class AgentRunState:
 
     def add_action(self, action: ToolAction) -> None:
         self.actions.append(action)
+
+    def set_knowledge_context(self, knowledge_context: KnowledgeContext) -> None:
+        self.knowledge_context = knowledge_context
 
     def add_evidence(self, evidence: EvidenceItem) -> None:
         self.evidence.append(evidence)
