@@ -86,7 +86,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7
+    image: redis:8
     container_name: smartsre-redis
     ports:
       - "6379:6379"
