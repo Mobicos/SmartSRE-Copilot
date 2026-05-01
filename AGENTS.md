@@ -4,13 +4,15 @@ Project instructions for AI coding agents and maintainers.
 
 ## Commit Style
 
-Use this simplified Conventional Commits format:
+Use the project Conventional Commits format:
 
 ```text
 <type>: <concise action summary>
+<type>(<scope>): <concise action summary>
 ```
 
-Do not use scoped commits such as `fix(ci): ...`.
+Scopes are optional. Use them when they add useful context, especially for
+automated dependency updates and CI/platform work.
 
 Allowed types:
 
@@ -27,8 +29,9 @@ Examples:
 
 ```text
 fix: resolve CI type check failures
+ci(actions): enforce ruff format check
+chore(deps): update dependency lock file
 ci: enforce ruff format check
-chore: update dependency lock file
 docs: explain GitHub Actions workflow
 ```
 
@@ -39,7 +42,7 @@ If a change contains unrelated dependency lock updates, split the lock update
 into a separate commit named:
 
 ```text
-chore: update dependency lock file
+chore(deps): update dependency lock file
 ```
 
 ## Branch Policy
@@ -115,7 +118,7 @@ reason and rely on GitHub Actions as the final verification source.
 - Commit dependency lock updates separately as:
 
 ```text
-chore: update dependency lock file
+chore(deps): update dependency lock file
 ```
 
 ## Code Style

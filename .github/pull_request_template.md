@@ -7,10 +7,11 @@ the final commit subject:
 
 ```text
 <type>: <concise action summary>
+<type>(<scope>): <concise action summary>
 ```
 
 Allowed types: `feat`, `fix`, `ci`, `chore`, `docs`, `test`, `refactor`, `perf`.
-Do not use scopes such as `fix(ci): ...`.
+Scopes are optional and should be lowercase, for example `chore(deps): ...`.
 
 ## Changes
 

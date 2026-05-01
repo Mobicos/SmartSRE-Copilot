@@ -37,7 +37,7 @@ changes in one PR.
 Dependency lock changes should be committed separately:
 
 ```text
-chore: update dependency lock file
+chore(deps): update dependency lock file
 ```
 
 Local-only files stay local. In particular, root-level
@@ -45,10 +45,11 @@ Local-only files stay local. In particular, root-level
 
 ## 3. Commit Format
 
-Use the simplified Conventional Commits format from `AGENTS.md`:
+Use the project Conventional Commits format from `AGENTS.md`:
 
 ```text
 <type>: <concise action summary>
+<type>(<scope>): <concise action summary>
 ```
 
 Allowed types:
@@ -62,16 +63,15 @@ Allowed types:
 - `refactor`
 - `perf`
 
-Scopes are intentionally not used. Prefer:
+Scopes are optional. Use them when they add useful context, especially for
+dependency, CI, frontend, and infrastructure changes.
+
+Examples:
 
 ```text
 fix: resolve CI type check failures
-```
-
-Do not use:
-
-```text
-fix(ci): resolve CI type check failures
+ci(actions): resolve workflow permissions
+chore(deps): bump cryptography from 46.0.5 to 46.0.7
 ```
 
 ## 4. Pull Request Rules

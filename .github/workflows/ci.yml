@@ -31,11 +31,11 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          pattern='^(feat|fix|ci|chore|docs|test|refactor|perf): [a-z0-9].+$'
+          pattern='^(feat|fix|ci|chore|docs|test|refactor|perf)(\([a-z0-9][a-z0-9.-]*\))?: [a-z0-9].+$'
           if [[ ! "$PR_TITLE" =~ $pattern ]]; then
-            echo "PR title must match: <type>: <concise action summary>"
+            echo "PR title must match: <type>: <concise action summary> or <type>(<scope>): <concise action summary>"
             echo "Allowed types: feat, fix, ci, chore, docs, test, refactor, perf"
-            echo "Scopes are not allowed, for example use 'fix: resolve CI failures' instead of 'fix(ci): resolve CI failures'."
+            echo "Optional scopes may contain lowercase letters, numbers, dots, and hyphens."
             echo "Current title: $PR_TITLE"
             exit 1
           fi
