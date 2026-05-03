@@ -6,8 +6,8 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from app.api.providers import get_service_health
 from app.config import config
-from app.core.container import service_container
 from app.core.milvus_client import milvus_manager
 from app.infrastructure import redis_manager
 from app.infrastructure.tasks import task_dispatcher
@@ -24,7 +24,7 @@ def _build_ready_health_payload() -> tuple[int, dict[str, Any]]:
         "status": "healthy",
     }
 
-    for service_name, health in service_container.get_service_health().items():
+    for service_name, health in get_service_health().items():
         health_data[service_name] = {
             "status": health.status,
             "message": health.message,

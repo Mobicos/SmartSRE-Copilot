@@ -7,8 +7,9 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.providers import get_aiops_application_service
 from app.api.responses import json_response
-from app.core.container import service_container
+from app.application.aiops_application_service import AIOpsApplicationService
 from app.domains.aiops import AIOpsRequest
 from app.platform.persistence import aiops_run_repository
 from app.security import Principal, require_capability
@@ -20,6 +21,7 @@ router = APIRouter()
 async def diagnose_stream(
     request: AIOpsRequest,
     principal: Principal = Depends(require_capability("aiops:run")),
+    aiops_application_service: AIOpsApplicationService = Depends(get_aiops_application_service),
 ):
     """
     AIOps 故障诊断接口（流式 SSE）
@@ -129,7 +131,6 @@ async def diagnose_stream(
     """
     session_id = request.session_id or "default"
     task_input = request.diagnosis_goal()
-    aiops_application_service = service_container.get_aiops_application_service()
     logger.info(f"[会话 {session_id}] 收到 AIOps 诊断请求（流式）")
     return EventSourceResponse(
         aiops_application_service.stream_diagnosis(

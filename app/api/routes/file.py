@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from app.api.providers import get_indexing_task_service, get_vector_index_service
 from app.api.responses import json_response
 from app.config import UPLOADS_DIR
-from app.core.container import service_container
 from app.infrastructure.tasks import task_dispatcher
 from app.platform.persistence.repositories.indexing import indexing_task_repository
 from app.security import Principal, require_capability
@@ -74,7 +74,7 @@ async def upload_file(
         file_path.write_bytes(content)
 
         logger.info(f"文件上传成功: {file_path}")
-        task_id = service_container.get_indexing_task_service().submit_task(
+        task_id = get_indexing_task_service().submit_task(
             safe_filename,
             str(file_path),
         )
@@ -126,7 +126,7 @@ async def index_directory(
         logger.info(f"开始索引目录: {directory_path or 'uploads'}")
 
         # 执行索引
-        result = service_container.get_vector_index_service().index_directory(directory_path)
+        result = get_vector_index_service().index_directory(directory_path)
 
         return JSONResponse(
             status_code=200,
