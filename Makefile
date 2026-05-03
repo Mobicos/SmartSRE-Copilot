@@ -585,6 +585,16 @@ test-quick:  ## 快速测试
 	@echo "$(YELLOW)⚡ 快速测试...$(NC)"
 	uv run pytest tests/ -v
 
+verify:  ## 运行 CI 等价的非破坏性后端质量门
+	@echo "$(YELLOW)🚦 运行后端质量门...$(NC)"
+	uv run python -m compileall app mcp_servers tests
+	uv run python -m ruff check app mcp_servers tests
+	uv run python -m ruff format --check app mcp_servers tests
+	uv run python -m mypy app --ignore-missing-imports
+	uv run python -m bandit -r app -ll
+	uv run python -m pytest tests -q
+	@echo "$(GREEN)✅ 后端质量门通过$(NC)"
+
 check-all:  ## 运行所有检查
 	@echo "$(YELLOW)🚀 运行所有检查...$(NC)"
 	@$(MAKE) format

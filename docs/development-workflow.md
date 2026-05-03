@@ -43,7 +43,31 @@ chore(deps): update dependency lock file
 Local-only files stay local. In particular, root-level
 `docker-compose.local.yml` is ignored and should not be pushed.
 
-## 3. Commit Format
+## 3. Local Enforcement
+
+Install repository hooks once per checkout:
+
+```bash
+make pre-commit-install
+```
+
+Before pushing backend, API, agent, infrastructure, or repository-governance
+changes, run the non-mutating verification target:
+
+```bash
+make verify
+```
+
+This target mirrors the backend CI contract: compile, lint, format check, type
+check, security scan, and tests. Use the narrower commands only when you are
+iterating locally; `make verify` is the final local gate before pushing.
+
+Do not bypass local hooks with `--no-verify` as a normal workflow. If a local
+tool cannot run because of Docker, network, platform, or credential constraints,
+record the exact command and failure reason in the PR and let GitHub Actions be
+the shared final gate.
+
+## 4. Commit Format
 
 Use the project Conventional Commits format from `AGENTS.md`:
 
@@ -83,7 +107,7 @@ chore(docker): bump ...
 ci(actions): bump ...
 ```
 
-## 4. Pull Request Rules
+## 5. Pull Request Rules
 
 Open PRs early when CI feedback is useful. Use draft PRs for incomplete work.
 Before requesting review, the PR must include:
@@ -96,7 +120,7 @@ Before requesting review, the PR must include:
 - API contract notes when backend responses or request models change.
 - Migration notes when persistence behavior changes.
 
-## 5. GitHub Actions Contract
+## 6. GitHub Actions Contract
 
 GitHub Actions is the final shared gate. CI must:
 
@@ -146,7 +170,7 @@ If local Docker, network, or platform constraints block a command, record the
 exact reason in the PR and rely on GitHub Actions as the final verification
 source.
 
-## 6. Merge Strategy
+## 7. Merge Strategy
 
 Use squash merge for normal feature, fix, refactor, docs, and CI PRs. This
 keeps `main` readable and ensures each merged PR has one clear commit.
@@ -158,7 +182,7 @@ Do not merge when required checks are failing, pending, or skipped unexpectedly.
 Delete remote feature branches after merge unless they are intentional
 integration branches.
 
-## 7. AI Coding Agent Rules
+## 8. AI Coding Agent Rules
 
 AI agents working in this repository must:
 
