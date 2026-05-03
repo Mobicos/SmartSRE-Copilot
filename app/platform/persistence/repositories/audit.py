@@ -26,20 +26,19 @@ class AuditLogRepository:
         user_agent: str | None,
         error_message: str | None = None,
     ) -> None:
-        entry = AuditLog(
-            request_id=request_id,
-            method=method,
-            path=path,
-            status_code=status_code,
-            subject=subject,
-            role=role,
-            client_ip=client_ip,
-            user_agent=user_agent,
-            error_message=error_message,
-            created_at=datetime.now(UTC),
-        )
         with Session(bind=get_engine()) as session:
-            session.add(entry)
+            self.log_request_with_session(
+                session,
+                request_id=request_id,
+                method=method,
+                path=path,
+                status_code=status_code,
+                subject=subject,
+                role=role,
+                client_ip=client_ip,
+                user_agent=user_agent,
+                error_message=error_message,
+            )
             session.commit()
 
     def log_request_with_session(

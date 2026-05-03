@@ -31,8 +31,17 @@ Examples:
 fix: resolve CI type check failures
 ci(actions): enforce ruff format check
 chore(deps): update dependency lock file
+chore(docker): bump postgres from 16.1 to 16.2
 ci: enforce ruff format check
 docs: explain GitHub Actions workflow
+```
+
+Dependency bump PR titles must use these scopes:
+
+```text
+chore(deps): bump ...
+chore(docker): bump ...
+ci(actions): bump ...
 ```
 
 PR titles must use the same format because squash merges use the PR title as
@@ -87,7 +96,16 @@ chore(deps): update dependency lock file
 ## Quality Gates
 
 Before committing code changes, run the project quality gates when the local
-environment permits it:
+environment permits it. Prefer the single repository entry point:
+
+```powershell
+make verify
+```
+
+`make verify` is intentionally non-mutating. It checks the same backend quality
+contract expected by CI without formatting or rewriting files.
+
+The equivalent backend commands are:
 
 ```powershell
 python -m compileall app mcp_servers tests
@@ -110,11 +128,42 @@ pnpm build
 If a local environment issue prevents a command from running, record the exact
 reason and rely on GitHub Actions as the final verification source.
 
+## Enforcement Policy
+
+Repository rules must be enforced by tools, not memory:
+
+- Install local hooks before contributing:
+
+  ```powershell
+  make pre-commit-install
+  ```
+
+- Treat hook failures as blockers. Do not bypass hooks with `--no-verify`
+  unless the PR explicitly documents the reason and CI provides the final gate.
+- Run `make verify` before pushing backend, API, agent, infrastructure, or
+  repository-governance changes when the local environment permits it.
+- Run frontend gates before pushing changes under `frontend/`.
+- Push work on a focused feature branch and open a PR. Do not push directly to
+  `main`.
+- Keep branch protection enabled so required checks and PR title validation
+  block non-compliant merges.
+- Use squash merge only after required checks are green and the PR title is a
+  valid Conventional Commit subject.
+- If local verification cannot run because of Docker, network, platform, or
+  credential constraints, record the exact command and failure reason in the PR.
+- Never commit local-only files, secrets, `.env` files, IDE metadata, generated
+  caches, or root-level `docker-compose.local.yml`.
+
 ## Dependency Policy
 
 - Keep `pyproject.toml` as the source of declared dependencies.
 - Keep `uv.lock` committed because this is an application repository.
 - Do not mix lockfile-only churn into feature or fix commits.
+- Dependabot version updates should group related dependencies and avoid
+  automatic semver-major updates.
+- Runtime and infrastructure major or minor upgrades, such as Python base
+  images, PostgreSQL, Redis, Milvus, etcd, and MinIO, require a dedicated PR and
+  explicit runtime validation.
 - Commit dependency lock updates separately as:
 
 ```text

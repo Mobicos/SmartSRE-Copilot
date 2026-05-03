@@ -10,10 +10,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from app.api.routes import aiops, chat, file, health, native_agent
+from app.api.main import api_router
+from app.api.providers import initialize_services, shutdown_services
+from app.api.routes import health
 from app.config import config
-from app.core.container import service_container
-from app.core.milvus_client import milvus_manager
 from app.infrastructure.tasks import task_dispatcher
 from app.platform.persistence import audit_log_repository
 from app.security import validate_security_configuration
@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
     # 初始化核心依赖
     logger.info("🔌 正在初始化核心依赖...")
-    service_container.initialize_required_services()
+    initialize_services()
     logger.info("✅ 核心依赖初始化成功")
 
     logger.info("=" * 60)
@@ -53,9 +53,8 @@ async def lifespan(app: FastAPI):
     if task_dispatcher.is_started:
         logger.info("🧵 正在停止任务调度器...")
         await task_dispatcher.shutdown()
-    logger.info("🔌 正在关闭 Milvus 连接...")
-    milvus_manager.close()
-    await service_container.shutdown()
+    logger.info("🔌 正在关闭服务...")
+    await shutdown_services()
     logger.info(f"👋 {config.app_name} 关闭")
 
 
@@ -138,11 +137,9 @@ async def request_context_middleware(request: Request, call_next):
 
 
 # 注册路由
-app.include_router(health.router, tags=["健康检查"])
-app.include_router(chat.router, prefix="/api", tags=["对话"])
-app.include_router(file.router, prefix="/api", tags=["文件管理"])
-app.include_router(aiops.router, prefix="/api", tags=["AIOps智能运维"])
-app.include_router(native_agent.router, prefix="/api", tags=["Native Agent"])
+app.include_router(health.router, tags=["Health"])
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/api")  # backward compatibility
 
 
 @app.get("/")
