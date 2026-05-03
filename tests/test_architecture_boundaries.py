@@ -86,11 +86,11 @@ def test_knowledge_infrastructure_lives_under_infrastructure_package():
 
 
 def test_indexing_task_orchestration_has_explicit_application_and_infrastructure_layers():
+    from app.api.providers import get_indexing_task_service
     from app.application.indexing import IndexingTaskService
-    from app.core.container import service_container
     from app.infrastructure.tasks import LocalTaskDispatcher, task_dispatcher
 
-    assert service_container.get_indexing_task_service().__class__ is IndexingTaskService
+    assert get_indexing_task_service().__class__ is IndexingTaskService
     assert task_dispatcher.__class__ is LocalTaskDispatcher
 
 
@@ -99,6 +99,7 @@ def test_indexing_task_application_service_does_not_import_global_container():
 
     assert "app.core.container" not in source
     assert "service_container" not in source
+    assert "app.api.providers" not in source
 
 
 def test_native_agent_repositories_live_in_platform_persistence_package():
@@ -170,9 +171,7 @@ def test_api_routes_live_in_routes_package():
 
 
 def test_native_agent_has_application_service_boundary():
+    from app.api.providers import get_native_agent_application_service
     from app.application.native_agent_application_service import NativeAgentApplicationService
-    from app.core.container import service_container
 
-    assert service_container.get_native_agent_application_service().__class__ is (
-        NativeAgentApplicationService
-    )
+    assert get_native_agent_application_service().__class__ is NativeAgentApplicationService

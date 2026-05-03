@@ -15,9 +15,9 @@ IndexingTaskProcessor = Callable[[str, str], str]
 
 
 def _default_indexing_task_processor(task_id: str, file_path: str) -> str:
-    from app.core.container import service_container
+    from app.api.providers import get_indexing_task_service
 
-    return service_container.get_indexing_task_service().process_task(task_id, file_path)
+    return get_indexing_task_service().process_task(task_id, file_path)
 
 
 class LocalTaskDispatcher:

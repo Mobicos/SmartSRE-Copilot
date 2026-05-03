@@ -5,8 +5,10 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.providers import get_chat_application_service, get_rag_agent_service
 from app.api.responses import json_response
-from app.core.container import service_container
+from app.application.chat import RagAgentService
+from app.application.chat_application_service import ChatApplicationService
 from app.domains.chat import ApiResponse, ChatRequest, ClearRequest, SessionInfoResponse
 from app.platform.persistence import chat_tool_event_repository, conversation_repository
 from app.security import Principal, require_capability
@@ -18,6 +20,7 @@ router = APIRouter()
 async def chat(
     request: ChatRequest,
     _principal: Principal = Depends(require_capability("chat:use")),
+    chat_application_service: ChatApplicationService = Depends(get_chat_application_service),
 ):
     """快速对话接口
     {
@@ -37,7 +40,6 @@ async def chat(
         统一格式的对话响应
     """
     try:
-        chat_application_service = service_container.get_chat_application_service()
         logger.info(f"[会话 {request.id}] 收到快速对话请求: {request.question}")
         result = await chat_application_service.run_chat(request.id, request.question)
 
@@ -79,6 +81,7 @@ async def chat(
 async def chat_stream(
     request: ChatRequest,
     _principal: Principal = Depends(require_capability("chat:use")),
+    chat_application_service: ChatApplicationService = Depends(get_chat_application_service),
 ):
     """流式对话接口（基于 RAG Agent，SSE）
 
@@ -103,7 +106,6 @@ async def chat_stream(
         SSE 事件流
     """
     logger.info(f"[会话 {request.id}] 收到流式对话请求: {request.question}")
-    chat_application_service = service_container.get_chat_application_service()
 
     return EventSourceResponse(chat_application_service.stream_chat(request.id, request.question))
 
@@ -112,6 +114,7 @@ async def chat_stream(
 async def clear_session(
     request: ClearRequest,
     _principal: Principal = Depends(require_capability("chat:use")),
+    chat_application_service: ChatApplicationService = Depends(get_chat_application_service),
 ):
     """清空会话历史
 
@@ -122,7 +125,6 @@ async def clear_session(
         操作结果
     """
     try:
-        chat_application_service = service_container.get_chat_application_service()
         success = chat_application_service.clear_session(request.session_id)
         logger.info(f"清空会话: {request.session_id}, 结果: {success}")
 
@@ -161,6 +163,7 @@ async def list_sessions(
 async def get_session_info(
     session_id: str,
     _principal: Principal = Depends(require_capability("chat:read")),
+    rag_agent_service: RagAgentService = Depends(get_rag_agent_service),
 ) -> SessionInfoResponse:
     """查询会话历史
 
@@ -176,7 +179,6 @@ async def get_session_info(
             for message in conversation_repository.get_session_messages(session_id)
         ]
         if not history:
-            rag_agent_service = service_container.get_rag_agent_service()
             history = rag_agent_service.get_session_history(session_id)
 
         return SessionInfoResponse(

@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
+from app.api.providers import get_native_agent_application_service
 from app.api.responses import json_response
-from app.core.container import service_container
+from app.application.native_agent_application_service import NativeAgentApplicationService
 from app.domains.native_agent import (
     AgentFeedbackCreateRequest,
     AgentRunCreateRequest,
@@ -23,8 +24,11 @@ router = APIRouter()
 async def create_workspace(
     request: WorkspaceCreateRequest,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    workspace = service_container.get_native_agent_application_service().create_workspace(
+    workspace = native_agent_service.create_workspace(
         name=request.name,
         description=request.description,
     )
@@ -41,8 +45,11 @@ async def create_workspace(
 @router.get("/workspaces")
 async def list_workspaces(
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    workspaces = service_container.get_native_agent_application_service().list_workspaces()
+    workspaces = native_agent_service.list_workspaces()
     return json_response(
         status_code=200,
         content={
@@ -57,8 +64,11 @@ async def list_workspaces(
 async def create_scene(
     request: SceneCreateRequest,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    scene = service_container.get_native_agent_application_service().create_scene(
+    scene = native_agent_service.create_scene(
         workspace_id=request.workspace_id,
         name=request.name,
         description=request.description,
@@ -80,10 +90,11 @@ async def create_scene(
 async def list_scenes(
     workspace_id: str | None = None,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    scenes = service_container.get_native_agent_application_service().list_scenes(
-        workspace_id=workspace_id
-    )
+    scenes = native_agent_service.list_scenes(workspace_id=workspace_id)
     return json_response(
         status_code=200,
         content={
@@ -98,8 +109,11 @@ async def list_scenes(
 async def get_scene(
     scene_id: str,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    scene = service_container.get_native_agent_application_service().get_scene(scene_id)
+    scene = native_agent_service.get_scene(scene_id)
     if scene is None:
         return JSONResponse(status_code=404, content={"code": 404, "message": "not_found"})
     return json_response(
@@ -111,8 +125,11 @@ async def get_scene(
 @router.get("/tools")
 async def list_tools(
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    data = await service_container.get_native_agent_application_service().list_tools()
+    data = await native_agent_service.list_tools()
     return json_response(
         status_code=200,
         content={"code": 200, "message": "success", "data": data},
@@ -124,8 +141,11 @@ async def update_tool_policy(
     tool_name: str,
     request: ToolPolicyUpdateRequest,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    policy = service_container.get_native_agent_application_service().update_tool_policy(
+    policy = native_agent_service.update_tool_policy(
         tool_name,
         scope=request.scope,
         risk_level=request.risk_level,
@@ -143,8 +163,11 @@ async def update_tool_policy(
 async def create_agent_run(
     request: AgentRunCreateRequest,
     principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    run = await service_container.get_native_agent_application_service().create_agent_run(
+    run = await native_agent_service.create_agent_run(
         scene_id=request.scene_id,
         session_id=request.session_id,
         goal=request.goal,
@@ -170,8 +193,11 @@ async def create_agent_run(
 async def get_agent_run(
     run_id: str,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    run = service_container.get_native_agent_application_service().get_agent_run(run_id)
+    run = native_agent_service.get_agent_run(run_id)
     if run is None:
         return JSONResponse(status_code=404, content={"code": 404, "message": "not_found"})
     return json_response(
@@ -184,8 +210,11 @@ async def get_agent_run(
 async def list_agent_run_events(
     run_id: str,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    events = service_container.get_native_agent_application_service().list_agent_run_events(run_id)
+    events = native_agent_service.list_agent_run_events(run_id)
     if events is None:
         return JSONResponse(status_code=404, content={"code": 404, "message": "not_found"})
     return json_response(
@@ -203,8 +232,11 @@ async def create_agent_feedback(
     run_id: str,
     request: AgentFeedbackCreateRequest,
     _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
 ):
-    feedback = service_container.get_native_agent_application_service().create_agent_feedback(
+    feedback = native_agent_service.create_agent_feedback(
         run_id,
         rating=request.rating,
         comment=request.comment,
