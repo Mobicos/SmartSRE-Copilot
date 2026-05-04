@@ -374,6 +374,7 @@ class RagAgentService:
 
                 if message_type in ("AIMessage", "AIMessageChunk"):
                     content_blocks = getattr(token, "content_blocks", None)
+                    raw_content = getattr(token, "content", None)
 
                     if content_blocks and isinstance(content_blocks, list):
                         for block in content_blocks:
@@ -386,6 +387,14 @@ class RagAgentService:
                                         "data": text_content,
                                         "node": node_name,
                                     }
+                    elif raw_content and isinstance(raw_content, str):
+                        # Fallback: use content attribute directly when content_blocks is empty
+                        full_response += raw_content
+                        yield {
+                            "type": "content",
+                            "data": raw_content,
+                            "node": node_name,
+                        }
 
             logger.info(f"[会话 {session_id}] RAG Agent 查询完成（流式）")
             yield {
