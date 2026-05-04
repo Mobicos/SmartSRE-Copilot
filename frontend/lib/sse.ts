@@ -20,10 +20,13 @@ export async function* parseSSE(
       buffer += decoder.decode(value, { stream: true })
 
       let sepIdx: number
-      // Process complete event blocks (separated by blank line)
-      while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
+      // Process complete event blocks (handle both \r\n\r\n and \n\n separators)
+      // sse-starlette uses \r\n\r\n, some implementations use \n\n
+      while ((sepIdx = buffer.search(/\r\n\r\n|\n\n/)) !== -1) {
         const block = buffer.slice(0, sepIdx)
-        buffer = buffer.slice(sepIdx + 2)
+        // Move past the separator (2 or 4 characters depending on which matched)
+        const separatorMatch = buffer.slice(sepIdx).match(/^\r\n\r\n|\n\n/)
+        buffer = buffer.slice(sepIdx + (separatorMatch ? separatorMatch[0].length : 2))
         const msg = parseBlock(block)
         if (msg) yield msg
       }

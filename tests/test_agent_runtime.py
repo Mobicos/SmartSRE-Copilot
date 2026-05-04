@@ -45,6 +45,11 @@ class StaticExecutor:
         )
 
 
+class FailingExecutor:
+    async def execute(self, tool, args, *, principal):
+        raise RuntimeError("tool backend unavailable")
+
+
 class MemorySceneStore:
     def __init__(self):
         self.scene = {
@@ -61,6 +66,8 @@ class MemoryRunStore:
     def __init__(self):
         self.events = []
         self.final_report = None
+        self.status = None
+        self.error_message = None
 
     def create_run(self, *, workspace_id, scene_id, session_id, goal):
         return "run-1"
@@ -76,8 +83,10 @@ class MemoryRunStore:
             }
         )
 
-    def update_run(self, run_id, *, status, final_report=None):
+    def update_run(self, run_id, *, status, final_report=None, error_message=None):
+        self.status = status
         self.final_report = final_report
+        self.error_message = error_message
 
 
 class MemoryPolicyStore:
@@ -212,6 +221,40 @@ async def test_agent_runtime_accepts_injected_persistence_ports():
     assert run_store.events[0]["type"] == "run_started"
     assert run_store.events[-1]["type"] == "final_report"
     assert "外部 MCP 工具不可用" in str(run_store.final_report)
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_marks_run_failed_and_records_error_event():
+    run_store = MemoryRunStore()
+    scene_store = MemorySceneStore()
+    scene_store.scene["tools"] = ["SearchLog"]
+    runtime = AgentRuntime(
+        tool_catalog=StaticCatalog([SimpleNamespace(name="SearchLog", description="Search logs")]),
+        tool_executor=FailingExecutor(),
+        scene_store=scene_store,
+        run_store=run_store,
+        policy_store=MemoryPolicyStore(),
+    )
+
+    events = [
+        event
+        async for event in runtime.run(
+            scene_id="scene-1",
+            session_id="session-1",
+            goal="diagnose current alerts",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+
+    assert events[-1].type == "error"
+    assert events[-1].status == "failed"
+    assert run_store.status == "failed"
+    assert run_store.error_message == "RuntimeError: tool backend unavailable"
+    assert run_store.events[-1]["type"] == "error"
+    assert run_store.events[-1]["payload"] == {
+        "error_type": "RuntimeError",
+        "error_message": "tool backend unavailable",
+    }
 
 
 @pytest.mark.asyncio

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 
 from app.api.providers import get_native_agent_application_service
 from app.api.responses import json_response
@@ -186,6 +189,46 @@ async def create_agent_run(
             "message": "success",
             "data": run,
         },
+    )
+
+
+@router.post("/agent/runs/stream")
+async def stream_agent_run(
+    request: AgentRunCreateRequest,
+    principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    """Stream agent run events via SSE."""
+
+    async def event_generator():
+        async for event in native_agent_service.stream_agent_run(
+            scene_id=request.scene_id,
+            session_id=request.session_id,
+            goal=request.goal,
+            principal=principal,
+        ):
+            yield {
+                "event": event.get("type", "status"),
+                "data": json.dumps(event, ensure_ascii=False),
+            }
+
+    return EventSourceResponse(event_generator())
+
+
+@router.get("/agent/runs")
+async def list_agent_runs(
+    limit: int = 50,
+    _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    runs = native_agent_service.list_agent_runs(limit=limit)
+    return json_response(
+        status_code=200,
+        content={"code": 200, "message": "success", "data": runs},
     )
 
 

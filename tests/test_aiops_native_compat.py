@@ -68,3 +68,30 @@ async def test_aiops_stream_uses_native_runtime_and_preserves_complete_event():
     assert events[-1]["stage"] == "diagnosis_complete"
     assert events[-1]["diagnosis"]["report"] == "# report"
     assert events[-1]["native_run_id"] == "native-run"
+
+
+@pytest.mark.asyncio
+async def test_aiops_default_scene_is_created_with_diagnostic_tools():
+    service = AIOpsApplicationService(
+        agent_runtime=StaticRuntime(),
+        aiops_run_repository=aiops_run_repository,
+        conversation_repository=conversation_repository,
+        workspace_repository=workspace_repository,
+        scene_repository=scene_repository,
+    )
+
+    events = [
+        json.loads(chunk["data"])
+        async for chunk in service.stream_diagnosis(
+            "session-1",
+            task_input="Investigate current alerts",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+
+    scenes = scene_repository.list_scenes()
+    scene = scene_repository.get_scene(str(scenes[0]["id"]))
+
+    assert events[-1]["type"] == "complete"
+    assert scene is not None
+    assert scene["tools"] == ["get_current_time", "retrieve_knowledge"]

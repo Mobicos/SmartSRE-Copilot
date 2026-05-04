@@ -19,7 +19,38 @@ export async function POST(req: Request) {
         headers: sseHeaders(),
       })
     }
-    return new Response(upstream.body, {
+    // Transform the upstream SSE stream to ensure proper formatting
+    // Backend uses \r\n\r\n as SSE block separator (sse-starlette default)
+    const encoder = new TextEncoder()
+    const decoder = new TextDecoder()
+    const transformed = new ReadableStream({
+      async start(controller) {
+        const reader = upstream.body!.getReader()
+        let buffer = ""
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            // Process complete SSE blocks (handle both \r\n\r\n and \n\n separators)
+            const blocks = buffer.split(/\r\n\r\n|\n\n/)
+            buffer = blocks.pop() || ""
+            for (const block of blocks) {
+              if (block.trim()) {
+                controller.enqueue(encoder.encode(block + "\n\n"))
+              }
+            }
+          }
+          // Flush remaining
+          if (buffer.trim()) {
+            controller.enqueue(encoder.encode(buffer + "\n\n"))
+          }
+        } finally {
+          controller.close()
+        }
+      },
+    })
+    return new Response(transformed, {
       status: upstream.status,
       headers: sseHeaders(),
     })

@@ -130,15 +130,66 @@ ENVIRONMENT=dev
 
 ### 2. Start Infrastructure
 
-For the full Docker stack:
+**Option A: Full Docker Stack (recommended for testing)**
 
 ```bash
 docker compose up -d --build
 ```
 
-This starts PostgreSQL, Redis, Milvus, Attu, MinIO, migrations, backend app, and worker.
+This starts all services: PostgreSQL (5432), Redis (6379), Milvus (19530), Attu (8000), MinIO (9000/9001), migrations, backend app (9900), and worker.
 
-If you prefer the "local Python backend + Docker infrastructure" workflow, keep only the infrastructure services running and start the backend with `uv`. A root-level `docker-compose.local.yml`, if present, should be treated as local experimental configuration and should not be committed by default.
+**Option B: Local Development (recommended for development)**
+
+Use `docker-compose.yml` as the shared template, then copy it to an ignored
+`docker-compose.local.yml` for personal machine overrides. This keeps one source
+of truth for the project compose stack while still letting each developer change
+ports, volumes, or service scope locally.
+
+1. Copy the shared compose template:
+
+   ```bash
+   cp docker-compose.yml docker-compose.local.yml
+   ```
+
+2. Edit `docker-compose.local.yml` for your machine.
+
+   Common local changes:
+   - Change exposed ports if PostgreSQL, Redis, Milvus, Attu, or MinIO conflict
+     with services already running on your machine.
+   - Remove or comment out `app`, `worker`, and `migrate` if you prefer running
+     Python locally with `uv`.
+   - Keep service names such as `postgres`, `redis`, and `standalone` unchanged
+     if other compose services still depend on them.
+
+3. Start the local compose stack:
+
+   ```bash
+   docker compose -f docker-compose.local.yml up -d
+   ```
+
+   If you only need infrastructure for local Python development, start those
+   services directly:
+
+   ```bash
+   docker compose -f docker-compose.local.yml up -d postgres redis standalone attu minio
+   ```
+
+4. Update your `.env` to match your local exposed ports.
+
+   Example when local ports are shifted to avoid conflicts:
+
+   ```env
+   POSTGRES_DSN=postgresql://smartsre:smartsre@localhost:5433/smartsre
+   REDIS_URL=redis://localhost:6380/0
+   MILVUS_HOST=localhost
+   MILVUS_PORT=19531
+   ```
+
+5. Run backend and frontend locally with `uv` and `pnpm` (see steps 3-5 below).
+
+**Note**: `docker-compose.local.yml` is ignored by Git and should be treated as
+local-only configuration. Do not commit personal port mappings, local paths, or
+machine-specific service deletions.
 
 ### 3. Run Database Migrations
 

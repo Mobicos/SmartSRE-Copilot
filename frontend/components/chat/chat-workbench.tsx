@@ -114,33 +114,25 @@ export function ChatWorkbench() {
                 })
                 return
               }
-              // chunk events: try to extract content
-              if (typeof parsed === "string") {
-                buf.content += parsed
-              } else if (parsed && typeof parsed === "object") {
+              // Process content chunks
+              if (typeof parsed === "object" && parsed !== null) {
                 const p = parsed as Record<string, unknown>
-                if (p.type === "content" && typeof p.data === "string") buf.content += p.data
-                else if (p.type === "done" && p.data && typeof p.data === "object") {
+                if (p.type === "content" && typeof p.data === "string") {
+                  buf.content += p.data
+                } else if (p.type === "done" && p.data && typeof p.data === "object") {
                   const done = p.data as Record<string, unknown>
                   if (typeof done.answer === "string") buf.content = done.answer
-                  if (Array.isArray(done.tool_calls)) {
-                    // Tool calls are not rendered yet, but keep them attached for future UI detail panes.
-                  }
                 } else if (p.type === "error") {
                   applyAssistant(activeId, assistantMsg.id, {
                     content: buf.content,
                     sources: buf.sources,
                     streaming: false,
-                    error: typeof p.data === "string" ? p.data : "ç’‡é”‹çœ°æ¾¶è¾«è§¦",
+                    error: typeof p.data === "string" ? p.data : "Stream error",
                   })
-                } else if (typeof p.content === "string") buf.content += p.content
-                else if (typeof p.delta === "string") buf.content += p.delta
-                else if (typeof p.token === "string") buf.content += p.token
-                else if (typeof p.text === "string" && event !== "sources") buf.content += p.text
+                  return
+                }
                 if (Array.isArray(p.sources)) {
                   buf.sources = p.sources as ChatSource[]
-                } else if (event === "sources" && Array.isArray(parsed)) {
-                  buf.sources = parsed as ChatSource[]
                 }
               }
               applyAssistant(activeId, assistantMsg.id, {

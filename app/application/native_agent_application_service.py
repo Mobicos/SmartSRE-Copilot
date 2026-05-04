@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from app.agent_runtime import AgentRuntime, ToolCatalog
@@ -94,19 +95,24 @@ class NativeAgentApplicationService:
         self,
         tool_name: str,
         *,
-        scope: str,
-        risk_level: str,
+        scope: str | None,
+        risk_level: str | None,
         capability: str | None,
-        enabled: bool,
-        approval_required: bool,
+        enabled: bool | None,
+        approval_required: bool | None,
     ) -> dict[str, Any]:
+        current = self._tool_policy_repository.get_policy(tool_name) or {}
         return self._tool_policy_repository.upsert_policy(
             tool_name,
-            scope=scope,
-            risk_level=risk_level,
-            capability=capability,
-            enabled=enabled,
-            approval_required=approval_required,
+            scope=scope if scope is not None else str(current.get("scope") or "diagnosis"),
+            risk_level=risk_level
+            if risk_level is not None
+            else str(current.get("risk_level") or "low"),
+            capability=capability if capability is not None else current.get("capability"),
+            enabled=enabled if enabled is not None else bool(current.get("enabled", True)),
+            approval_required=approval_required
+            if approval_required is not None
+            else bool(current.get("approval_required", False)),
         )
 
     async def create_agent_run(
@@ -134,6 +140,23 @@ class NativeAgentApplicationService:
             "final_report": final_event.get("final_report", ""),
         }
 
+    async def stream_agent_run(
+        self,
+        *,
+        scene_id: str,
+        session_id: str,
+        goal: str,
+        principal: Principal,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream agent run events as dictionaries."""
+        async for event in self._agent_runtime.run(
+            scene_id=scene_id,
+            session_id=session_id,
+            goal=goal,
+            principal=principal,
+        ):
+            yield self._runtime_event_to_dict(event)
+
     @staticmethod
     def _runtime_event_to_dict(event: Any) -> dict[str, Any]:
         if hasattr(event, "to_dict"):
@@ -143,6 +166,9 @@ class NativeAgentApplicationService:
 
     def get_agent_run(self, run_id: str) -> dict[str, Any] | None:
         return self._agent_run_repository.get_run(run_id)
+
+    def list_agent_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self._agent_run_repository.list_runs(limit=limit)
 
     def list_agent_run_events(self, run_id: str) -> list[dict[str, Any]] | None:
         if self._agent_run_repository.get_run(run_id) is None:

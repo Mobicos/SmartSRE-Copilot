@@ -31,6 +31,7 @@ class AgentRunStore(Protocol):
         *,
         status: str,
         final_report: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Update run lifecycle state."""
 
