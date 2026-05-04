@@ -498,6 +498,16 @@ class AgentRunRepository:
         with Session(bind=get_engine()) as db:
             return self.get_run_with_session(db, run_id)
 
+    def list_runs_with_session(self, db: Session, *, limit: int = 50) -> list[dict[str, Any]]:
+        rows = db.exec(
+            select(AgentRun).order_by(col(AgentRun.created_at).desc()).limit(limit)
+        ).all()
+        return [self._row_to_dict(row) for row in rows]
+
+    def list_runs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with Session(bind=get_engine()) as db:
+            return self.list_runs_with_session(db, limit=limit)
+
     def append_event_with_session(
         self,
         db: Session,
