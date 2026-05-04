@@ -141,11 +141,13 @@ class AIOpsApplicationService:
         scenes = self._scene_repository.list_scenes(workspace_id=workspace_id)
         if scenes:
             return str(scenes[0]["id"])
+
         return self._scene_repository.create_scene(
             workspace_id,
             name="Default AIOps Diagnosis",
-            description="Default AIOps compatibility scene",
+            description="Default AIOps compatibility scene with diagnostic tools",
             agent_config={"mode": "compat"},
+            tool_names=["retrieve_knowledge", "get_current_time"],
         )
 
     @staticmethod

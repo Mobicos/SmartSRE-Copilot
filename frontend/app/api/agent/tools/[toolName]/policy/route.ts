@@ -5,26 +5,15 @@ import { unwrapBackendEnvelope } from "@/lib/api-contracts"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export async function GET(req: Request) {
-  try {
-    const url = new URL(req.url)
-    const limit = url.searchParams.get("limit")
-    const path = limit ? `/api/agent/runs?limit=${encodeURIComponent(limit)}` : "/api/agent/runs"
-    const res = await backendFetch(path)
-    const payload = await readPayload(res)
-    return NextResponse.json(unwrapBackendEnvelope(payload), { status: res.status })
-  } catch (err) {
-    return NextResponse.json(
-      { error: (err as Error).message ?? "backend unreachable" },
-      { status: 502 },
-    )
-  }
+interface Props {
+  params: Promise<{ toolName: string }>
 }
 
-export async function POST(req: Request) {
+export async function PATCH(req: Request, { params }: Props) {
   try {
-    const res = await backendFetch("/api/agent/runs", {
-      method: "POST",
+    const { toolName } = await params
+    const res = await backendFetch(`/api/tools/${encodeURIComponent(toolName)}/policy`, {
+      method: "PATCH",
       body: await req.text(),
     })
     const payload = await readPayload(res)

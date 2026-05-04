@@ -22,11 +22,11 @@ class SceneCreateRequest(BaseModel):
 
 
 class ToolPolicyUpdateRequest(BaseModel):
-    scope: str = "diagnosis"
-    risk_level: str = "low"
+    scope: str | None = None
+    risk_level: str | None = None
     capability: str | None = None
-    enabled: bool = True
-    approval_required: bool = False
+    enabled: bool | None = None
+    approval_required: bool | None = None
 
 
 class AgentRunCreateRequest(BaseModel):
@@ -36,5 +36,5 @@ class AgentRunCreateRequest(BaseModel):
 
 
 class AgentFeedbackCreateRequest(BaseModel):
-    rating: str = Field(pattern="^(up|down)$")
+    rating: str = Field(pattern="^(up|down|helpful|not_helpful|wrong|unsafe|incomplete)$")
     comment: str | None = None
