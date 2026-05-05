@@ -5,6 +5,13 @@ All notable changes to SmartSRE Copilot are documented in this file.
 This project follows Semantic Versioning and uses Conventional Commits for
 commit messages and pull request titles.
 
+## \[1.3.1\] - 2026-05-05
+
+### Removed
+
+- Removed `PLAN.md` from the public repository. The detailed internal roadmap
+  should not be published as part of the open-source release artifact.
+
 ## \[1.3.0\] - 2026-05-05
 
 ### Added
