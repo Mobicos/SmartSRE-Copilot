@@ -164,6 +164,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Prepare compose environment
+        run: cp .env.example .env
+
       - name: Validate compose configuration
         run: docker compose -f docker-compose.yml config --quiet
 
