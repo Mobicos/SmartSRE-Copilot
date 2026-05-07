@@ -2,9 +2,12 @@
 
 import re
 import sys
-from typing import Any
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from loguru import Record
 
 from app.config import LOGS_DIR, config
 
@@ -24,12 +27,12 @@ def _redact_secrets(text: str) -> str:
     return text
 
 
-def _patch_record(record: dict[str, Any]) -> None:
+def _patch_record(record: Record) -> None:
     record["extra"].setdefault("request_id", "-")
     record["message"] = _redact_secrets(record["message"])
 
 
-def _human_format(record: dict[str, Any]) -> str:
+def _human_format(record: Record) -> str:
     request_id = record["extra"].get("request_id", "-")
     return (
         f"<green>{record['time']:%Y-%m-%d %H:%M:%S}</green> | "

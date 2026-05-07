@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import cast
 
 from loguru import logger
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import Pool
+from sqlalchemy.pool import Pool, QueuePool
 from sqlmodel import Session
 
 from app.config import config
@@ -27,10 +28,11 @@ _POOL_WARN_THRESHOLD = 0.8
 
 def _install_pool_listeners(pool: Pool) -> None:
     """Attach connection-pool monitoring events."""
+    qpool = cast(QueuePool, pool)
 
     @event.listens_for(pool, "checkout")
     def _on_checkout(dbapi_conn, connection_record, connection_proxy):  # noqa: ARG001
-        checked_out = pool.checkedout()
+        checked_out = qpool.checkedout()
         capacity = _POOL_SIZE + _POOL_MAX_OVERFLOW
         if checked_out >= capacity * _POOL_WARN_THRESHOLD:
             logger.warning(
@@ -96,7 +98,7 @@ def health_check() -> bool:
 def get_pool_status() -> dict[str, int]:
     """Return current connection pool statistics."""
     engine = get_engine()
-    pool = engine.pool
+    pool = cast(QueuePool, engine.pool)
     return {
         "pool_size": pool.size(),
         "checked_out": pool.checkedout(),

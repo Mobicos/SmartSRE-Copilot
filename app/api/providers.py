@@ -199,6 +199,7 @@ def get_agent_runtime() -> AgentRuntime:
     )
 
     provider_name = config.agent_decision_provider.strip().lower()
+    decision_provider: QwenDecisionProvider | DeterministicDecisionProvider
     if provider_name == "qwen":
         from app.core.llm_factory import llm_factory
 

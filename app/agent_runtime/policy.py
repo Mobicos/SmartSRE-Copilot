@@ -68,4 +68,4 @@ class ToolPolicyGate:
             )
             return merged
 
-        return base if base else None
+        return base if base else {"tool_name": tool_name}

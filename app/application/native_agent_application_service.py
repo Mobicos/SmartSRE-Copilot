@@ -346,7 +346,7 @@ class NativeAgentApplicationService:
                 raise ValueError("approval_expired")
             raise ValueError("approval_already_decided")
 
-        payload = {
+        payload: dict[str, Any] = {
             "tool_name": tool_name,
             "decision": decision,
             "comment": comment,
@@ -673,14 +673,14 @@ def _build_tool_trajectory(
         tool_name = str(payload.get("tool_name") or payload.get("tool") or "")
         if not tool_name:
             continue
-        result = None
+        matched_result: dict[str, Any] | None = None
         if pending_results.get(tool_name):
-            result = pending_results[tool_name].pop(0)
+            matched_result = pending_results[tool_name].pop(0)
         trajectories.append(
             {
                 "tool_name": tool_name,
                 "call": tool_call,
-                "result": result,
+                "result": matched_result,
                 "approval_state": payload.get("approval_state"),
                 "policy": payload.get("policy"),
                 "execution_status": payload.get("execution_status"),
@@ -743,17 +743,17 @@ def _resume_status_reason(resume_status: str) -> str:
 def _approval_expires_at(created_at: Any) -> str | None:
     if not isinstance(created_at, datetime):
         return None
-    created_at = _ensure_aware_utc(created_at)
-    expires_at = created_at + timedelta(seconds=config.agent_approval_timeout_seconds)
+    aware_dt: datetime = _ensure_aware_utc(created_at)
+    expires_at = aware_dt + timedelta(seconds=config.agent_approval_timeout_seconds)
     return expires_at.isoformat()
 
 
 def _approval_is_expired(created_at: Any, *, now: datetime) -> bool:
     if not isinstance(created_at, datetime):
         return False
-    created_at = _ensure_aware_utc(created_at)
+    aware_dt: datetime = _ensure_aware_utc(created_at)
     now = _ensure_aware_utc(now)
-    expires_at = created_at + timedelta(seconds=config.agent_approval_timeout_seconds)
+    expires_at = aware_dt + timedelta(seconds=config.agent_approval_timeout_seconds)
     return expires_at <= now
 
 

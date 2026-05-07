@@ -159,12 +159,15 @@ def _spec_summary(spec: dict[str, Any] | None, operations: list[ApiOperation]) -
             "tags": [],
         }
 
-    info = spec.get("info") if isinstance(spec.get("info"), dict) else {}
-    tags = spec.get("tags") if isinstance(spec.get("tags"), list) else []
+    raw_info = spec.get("info")
+    info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
+    raw_tags = spec.get("tags")
+    tags: list[Any] = raw_tags if isinstance(raw_tags, list) else []
+    raw_paths = spec.get("paths")
     return {
         "title": info.get("title"),
         "version": info.get("version"),
-        "path_count": len(spec.get("paths", {})) if isinstance(spec.get("paths"), dict) else 0,
+        "path_count": len(raw_paths) if isinstance(raw_paths, dict) else 0,
         "operation_count": len(operations),
         "tags": [str(tag.get("name")) for tag in tags if isinstance(tag, dict) and tag.get("name")],
     }

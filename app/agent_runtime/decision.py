@@ -347,15 +347,15 @@ class AgentDecisionRuntime:
         except Exception as exc:  # pragma: no cover - depends on optional import wiring
             raise RuntimeError("LangGraph is not available") from exc
 
-        graph = StateGraph(dict)
-        graph.add_node("initialize", _identity_graph_node)
-        graph.add_node("observe", _identity_graph_node)
-        graph.add_node("decide", self._graph_decide)
-        graph.add_node("validate_decision", _identity_graph_node)
-        graph.add_node("act", _identity_graph_node)
-        graph.add_node("evaluate_evidence", _identity_graph_node)
-        graph.add_node("recover", _identity_graph_node)
-        graph.add_node("final_report", _identity_graph_node)
+        graph = StateGraph(dict)  # type: ignore[type-var]
+        graph.add_node("initialize", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("observe", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("decide", self._graph_decide)  # type: ignore[call-overload]
+        graph.add_node("validate_decision", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("act", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("evaluate_evidence", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("recover", _identity_graph_node)  # type: ignore[call-overload]
+        graph.add_node("final_report", _identity_graph_node)  # type: ignore[call-overload]
         graph.set_entry_point("initialize")
         graph.add_edge("initialize", "observe")
         graph.add_edge("observe", "decide")
