@@ -1,5 +1,7 @@
 """Application logger configuration."""
 
+from __future__ import annotations
+
 import re
 import sys
 from typing import TYPE_CHECKING
