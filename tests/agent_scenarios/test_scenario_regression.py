@@ -11,16 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent_runtime import AgentRuntime, EvidenceItem, ToolAction
-from app.application.native_agent_application_service import (
-    NativeAgentApplicationService,
-)
+from app.agent_runtime import AgentRuntime
 from app.application.scenario_regression_service import (
-    SCENARIOS,
     ScenarioRegressionService,
 )
 from app.platform.persistence import (
-    agent_feedback_repository,
     agent_run_repository,
     knowledge_base_repository,
     scene_repository,
@@ -479,8 +474,6 @@ class _DisabledToolExecutor:
 
 async def test_failure_run_timeout():
     """Run timeout is recorded when total timeout is exceeded."""
-    from app.config import config
-
     workspace_id = workspace_repository.create_workspace(name="SRE-Timeout")
     scene_id = scene_repository.create_scene(
         workspace_id,

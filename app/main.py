@@ -26,12 +26,11 @@ setup_logger()
 
 def _init_otel() -> None:
     """Initialize OpenTelemetry instrumentation if OTEL_ENABLED is set."""
-    if not os.getenv("OTEL_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+    if os.getenv("OTEL_ENABLED", "").strip().lower() not in ("1", "true", "yes"):
         return
     try:
         from opentelemetry import trace
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
         from opentelemetry.sdk.resources import SERVICE_NAME, Resource
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
