@@ -28,9 +28,7 @@ class AgentResumeDispatcher:
         *,
         resume_task_processor: AgentResumeTaskProcessor | None = None,
     ) -> None:
-        self._resume_task_processor = (
-            resume_task_processor or _default_agent_resume_task_processor
-        )
+        self._resume_task_processor = resume_task_processor or _default_agent_resume_task_processor
         self._worker_task: asyncio.Task[None] | None = None
         self._started = False
 

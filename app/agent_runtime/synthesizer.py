@@ -23,9 +23,7 @@ class ReportSynthesizer:
             else "- No scene knowledge base is configured."
         )
         tool_failures = [
-            item.to_report_line()
-            for item in state.evidence
-            if item.status not in {"success"}
+            item.to_report_line() for item in state.evidence if item.status not in {"success"}
         ]
         tool_failure_text = (
             "\n".join(f"- {item}" for item in tool_failures)

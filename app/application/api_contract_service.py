@@ -108,8 +108,12 @@ class ApiContractService:
         snapshot_map = {_operation_key(operation): operation for operation in snapshot}
         current_map = {_operation_key(operation): operation for operation in current}
 
-        added = [operation.to_dict() for key, operation in current_map.items() if key not in snapshot_map]
-        removed = [operation.to_dict() for key, operation in snapshot_map.items() if key not in current_map]
+        added = [
+            operation.to_dict() for key, operation in current_map.items() if key not in snapshot_map
+        ]
+        removed = [
+            operation.to_dict() for key, operation in snapshot_map.items() if key not in current_map
+        ]
         changed = []
         for key, operation in current_map.items():
             previous = snapshot_map.get(key)

@@ -159,9 +159,7 @@ async def test_golden_approval_required_high_risk():
     stored = agent_run_repository.list_events(last.run_id)
     tool_results = [e for e in stored if e["type"] == "tool_result"]
 
-    assert any(
-        r["payload"].get("execution_status") == "approval_required" for r in tool_results
-    )
+    assert any(r["payload"].get("execution_status") == "approval_required" for r in tool_results)
     assert any(r["payload"].get("approval_state") == "required" for r in tool_results)
 
 

@@ -196,4 +196,6 @@ async def get_session_tool_events(
         )
     except Exception as e:
         logger.error(f"获取工具事件错误: {e}")
-        raise InfrastructureException("chat_tool_events_failed", code="chat_tool_events_failed") from e
+        raise InfrastructureException(
+            "chat_tool_events_failed", code="chat_tool_events_failed"
+        ) from e

@@ -57,8 +57,7 @@ async def test_tool_executor_returns_approval_required_without_invoking_tool():
     assert result.output is None
     assert result.governance_payload()["decision"] == "approval_required"
     assert (
-        result.governance_payload()["reason"]
-        == "Tool requires explicit approval before execution"
+        result.governance_payload()["reason"] == "Tool requires explicit approval before execution"
     )
 
 

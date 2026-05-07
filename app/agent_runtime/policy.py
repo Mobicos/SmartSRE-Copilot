@@ -62,9 +62,7 @@ class ToolPolicyGate:
                     "capability": override.get("capability") or merged.get("capability"),
                     "enabled": bool(override.get("enabled", merged.get("enabled", True))),
                     "approval_required": bool(
-                        override.get(
-                            "approval_required", merged.get("approval_required", False)
-                        )
+                        override.get("approval_required", merged.get("approval_required", False))
                     ),
                 }
             )

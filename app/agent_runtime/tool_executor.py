@@ -317,7 +317,9 @@ class ToolExecutor:
         return repr(tool)
 
 
-def _validate_json_schema_arguments(schema: dict[str, Any], arguments: dict[str, Any]) -> str | None:
+def _validate_json_schema_arguments(
+    schema: dict[str, Any], arguments: dict[str, Any]
+) -> str | None:
     required = schema.get("required") or []
     missing = [name for name in required if name not in arguments]
     if missing:

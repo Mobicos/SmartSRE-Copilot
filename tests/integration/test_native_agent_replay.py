@@ -220,9 +220,7 @@ def test_run_replay_exposes_trajectory_summary_and_metrics():
             "message": "Knowledge loaded",
             "created_at": created_at + timedelta(seconds=8),
             "payload": {
-                "knowledge_bases": [
-                    {"id": "kb-1", "name": "Runbook", "version": "development"}
-                ]
+                "knowledge_bases": [{"id": "kb-1", "name": "Runbook", "version": "development"}]
             },
         },
         {
@@ -243,8 +241,7 @@ def test_run_replay_exposes_trajectory_summary_and_metrics():
     assert replay["tool_trajectory"][0]["tool_name"] == "SearchLog"
     assert replay["tool_trajectory"][0]["call"]["payload"]["tool_name"] == "SearchLog"
     assert (
-        replay["tool_trajectory"][0]["result"]["payload"]["execution_status"]
-        == "approval_required"
+        replay["tool_trajectory"][0]["result"]["payload"]["execution_status"] == "approval_required"
     )
     assert replay["knowledge_citations"][0]["id"] == "kb-1"
     assert replay["approval_decisions"][0]["payload"]["decision"] == "approved"

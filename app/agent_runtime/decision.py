@@ -191,7 +191,9 @@ class DeterministicDecisionProvider:
                 confidence=0.4,
             )
 
-        remaining_tools = [tool for tool in state.available_tools if tool not in state.executed_tools]
+        remaining_tools = [
+            tool for tool in state.available_tools if tool not in state.executed_tools
+        ]
         if remaining_tools:
             tool_name = remaining_tools[0]
             return AgentDecision(
@@ -300,9 +302,7 @@ class LangChainQwenDecisionInvoker:
         content = getattr(response, "content", response)
         if isinstance(content, list):
             parts = [
-                str(item.get("text", item))
-                if isinstance(item, dict)
-                else str(item)
+                str(item.get("text", item)) if isinstance(item, dict) else str(item)
                 for item in content
             ]
             return "".join(parts)

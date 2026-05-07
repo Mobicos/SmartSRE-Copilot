@@ -298,9 +298,7 @@ class NativeAgentApplicationService:
                         "arguments": payload.get("arguments") or {},
                         "policy": payload.get("policy") or {},
                         "governance": payload.get("governance") or {},
-                        "status": decision.get("decision", "pending")
-                        if decision
-                        else "pending",
+                        "status": decision.get("decision", "pending") if decision else "pending",
                         "comment": decision.get("comment") if decision else None,
                         "created_at": event.get("created_at"),
                         "decided_at": decision.get("created_at") if decision else None,
@@ -353,9 +351,7 @@ class NativeAgentApplicationService:
             "decision": decision,
             "comment": comment,
             "actor": actor,
-            "resume_status": "pending_resume_enqueue"
-            if decision == "approved"
-            else "not_resumed",
+            "resume_status": "pending_resume_enqueue" if decision == "approved" else "not_resumed",
             "reason": _resume_status_reason(
                 "pending_resume_enqueue" if decision == "approved" else "not_resumed"
             ),
@@ -790,7 +786,11 @@ def _derive_run_metrics(run: dict[str, Any], events: list[dict[str, Any]]) -> di
     updated_at = run.get("updated_at")
     latency_ms = _latency_ms(created_at, updated_at)
     step_count = len(
-        [event for event in events if event.get("type") in {"hypothesis", "decision", "tool_call", "tool_result"}]
+        [
+            event
+            for event in events
+            if event.get("type") in {"hypothesis", "decision", "tool_call", "tool_result"}
+        ]
     )
     tool_call_count = len(_events_by_type(events, "tool_call"))
     retrieval_count = len(_events_by_type(events, "knowledge_context"))
@@ -800,7 +800,9 @@ def _derive_run_metrics(run: dict[str, Any], events: list[dict[str, Any]]) -> di
     decision_count = len(decision_events)
     approval_count = len(_events_by_type(events, "approval_decision"))
     resume_count = len(_events_by_type(events, "approval_resume"))
-    cost_estimate_usd = _estimate_run_cost(tool_call_count=tool_call_count, retrieval_count=retrieval_count)
+    cost_estimate_usd = _estimate_run_cost(
+        tool_call_count=tool_call_count, retrieval_count=retrieval_count
+    )
 
     persisted_step_count = _persisted_int(run.get("step_count"))
     persisted_tool_call_count = _persisted_int(run.get("tool_call_count"))
