@@ -36,6 +36,7 @@ dependencies = [
     "langchain-mcp-adapters>=0.2.2",
     "fastmcp>=3.2.4",
     "langchain-qwq>=0.3.4",
+    "prometheus-client>=0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -208,7 +209,7 @@ omit = [
 
 [tool.coverage.report]
 precision = 2
-fail_under = 65
+fail_under = 75
 show_missing = true
 skip_covered = false
 exclude_lines = [
