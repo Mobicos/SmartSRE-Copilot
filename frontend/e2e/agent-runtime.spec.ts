@@ -70,7 +70,7 @@ test.describe("Agent runtime production paths", () => {
     await expect(page.getByText("Replay Snapshot")).toBeVisible()
     await expect(page.getByText("Decision State")).toBeVisible()
     await expect(page.getByText("Tool Trajectory")).toBeVisible()
-    await expect(page.getByText("Report")).toBeVisible()
+    await expect(page.getByText("Report", { exact: true })).toBeVisible()
   })
 
   test("requires approval, approves the tool call, resumes, and updates replay state", async ({
