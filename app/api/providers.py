@@ -378,6 +378,11 @@ def get_native_agent_application_service() -> NativeAgentApplicationService:
 
 def initialize_services() -> None:
     """Initialize services required at application startup."""
+    if not config.dashscope_api_key.strip():
+        logger.warning(
+            "Skipping VectorStore startup initialization because DASHSCOPE_API_KEY is not configured"
+        )
+        return
     _ = get_app_container().vector_store_manager
 
 
