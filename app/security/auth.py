@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
+from hashlib import sha256
 
 from fastapi import Header, HTTPException, Request, status
 from loguru import logger
@@ -86,6 +87,14 @@ def validate_security_configuration() -> None:
             "DASHSCOPE_API_KEY is required when AGENT_DECISION_PROVIDER=qwen in production"
         )
 
+    redis_netloc = config.redis_url.split("://", 1)[-1].split("/", 1)[0]
+    if (
+        config.is_production
+        and config.task_queue_backend == "redis"
+        and not (config.redis_password.strip() or "@" in redis_netloc)
+    ):
+        raise RuntimeError("REDIS_PASSWORD or an authenticated REDIS_URL is required in production")
+
 
 async def get_current_principal(
     request: Request,
@@ -106,7 +115,7 @@ async def get_current_principal(
         return principal
 
     if x_api_key and x_api_key in api_key_roles:
-        principal = Principal(role=api_key_roles[x_api_key], subject=x_api_key[:8])
+        principal = Principal(role=api_key_roles[x_api_key], subject=_api_key_subject(x_api_key))
         request.state.principal = principal
         logger.info(
             f"Authenticated request principal: subject={principal.subject}, role={principal.role}"
@@ -145,3 +154,8 @@ async def require_api_key(
 ) -> Principal:
     """Require an API key and return the associated principal."""
     return await get_current_principal(request, x_api_key)
+
+
+def _api_key_subject(api_key: str) -> str:
+    """Return a stable non-reversible API key subject for logs and audit rows."""
+    return f"key:{sha256(api_key.encode('utf-8')).hexdigest()[:16]}"
