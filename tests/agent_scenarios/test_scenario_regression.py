@@ -46,8 +46,7 @@ _TOOL_EVIDENCE_TEMPLATES: dict[str, str] = {
         "'{sample_error}' — pattern indicates {diagnosis}."
     ),
     "SearchMetric": (
-        "Metric query returned: p99 latency={p99}ms, error_rate={err}% — "
-        "{diagnosis}."
+        "Metric query returned: p99 latency={p99}ms, error_rate={err}% — {diagnosis}."
     ),
     "RestartService": "Service restart command dispatched successfully — pod is rolling.",
     "get_current_time": "Current server time: 2026-05-09T10:32:00Z.",

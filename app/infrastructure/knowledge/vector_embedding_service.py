@@ -40,9 +40,7 @@ def _retry_with_backoff(
             )
             time.sleep(backoff)
             backoff *= _BACKOFF_MULTIPLIER
-    raise RuntimeError(
-        f"Embedding call failed after {max_retries} attempts"
-    ) from last_exc
+    raise RuntimeError(f"Embedding call failed after {max_retries} attempts") from last_exc
 
 
 class DashScopeEmbeddings(Embeddings):

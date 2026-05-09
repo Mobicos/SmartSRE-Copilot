@@ -221,9 +221,7 @@ class MilvusVectorStoreAdapter:
             else:
                 results = store.similarity_search_with_relevance_scores(query, k=k)
             # Filter by score threshold
-            return [
-                doc for doc, score in results if score >= score_threshold
-            ]
+            return [doc for doc, score in results if score >= score_threshold]
         except Exception as exc:
             logger.error(f"Milvus similarity search failed: {exc}")
             return []
@@ -362,7 +360,9 @@ class PgVectorStoreAdapter:
         except Exception as exc:
             logger.warning(f"pgvector add degraded during write: {exc}")
             return []
-        logger.info(f"Added {len(chunk_batch)} documents to pgvector collection={self.collection_name}")
+        logger.info(
+            f"Added {len(chunk_batch)} documents to pgvector collection={self.collection_name}"
+        )
         return [c["chunk_id"] for c in chunk_batch]
 
     def delete_by_source(self, file_path: str) -> int:

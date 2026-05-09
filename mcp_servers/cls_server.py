@@ -415,7 +415,9 @@ def _generate_app_logs(start_time: int, end_time: int, limit: int, query: str | 
     return logs
 
 
-def _generate_error_logs(start_time: int, end_time: int, limit: int, query: str | None) -> list[dict]:
+def _generate_error_logs(
+    start_time: int, end_time: int, limit: int, query: str | None
+) -> list[dict]:
     """topic-002: ERROR-level logs with stack traces for data-sync-service."""
     error_templates = [
         {
@@ -447,7 +449,7 @@ def _generate_error_logs(start_time: int, end_time: int, limit: int, query: str 
         {
             "message": "目标数据库写入失败: duplicate key value violates unique constraint",
             "stack": (
-                "psycopg.errors.UniqueViolation: duplicate key value violates unique constraint \"records_pkey\"\n"
+                'psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "records_pkey"\n'
                 "  at app.db.writer.batch_insert(writer.py:203)\n"
                 "  at app.sync.pipeline.flush_buffer(pipeline.py:178)"
             ),
@@ -466,19 +468,23 @@ def _generate_error_logs(start_time: int, end_time: int, limit: int, query: str 
     step = max(120_000, (end_time - start_time) // max(limit, 1))
     while current_ms <= end_time and len(logs) < limit:
         tmpl = random.choice(error_templates)
-        logs.append({
-            "timestamp": _ms_to_str(current_ms),
-            "level": "ERROR",
-            "message": tmpl["message"],
-            "stack_trace": tmpl["stack"],
-            "service": "data-sync-service",
-            "instance": f"data-sync-{random.randint(1, 4):03d}",
-        })
+        logs.append(
+            {
+                "timestamp": _ms_to_str(current_ms),
+                "level": "ERROR",
+                "message": tmpl["message"],
+                "stack_trace": tmpl["stack"],
+                "service": "data-sync-service",
+                "instance": f"data-sync-{random.randint(1, 4):03d}",
+            }
+        )
         current_ms += step
     return logs
 
 
-def _generate_gateway_logs(start_time: int, end_time: int, limit: int, query: str | None) -> list[dict]:
+def _generate_gateway_logs(
+    start_time: int, end_time: int, limit: int, query: str | None
+) -> list[dict]:
     """topic-003: API gateway access logs with HTTP status codes."""
     endpoints = [
         ("GET", "/api/v1/users", [200, 200, 200, 404]),
@@ -495,17 +501,19 @@ def _generate_gateway_logs(start_time: int, end_time: int, limit: int, query: st
         method, path = random.choice(endpoints)
         status = random.choice([200, 200, 200, 200, 201, 301, 400, 403, 404, 500, 502, 503])
         latency_ms = random.randint(2, 800) if status < 500 else random.randint(1000, 5000)
-        logs.append({
-            "timestamp": _ms_to_str(current_ms),
-            "level": "WARN" if status >= 400 else "INFO",
-            "message": f"{method} {path} -> {status} ({latency_ms}ms)",
-            "http_method": method,
-            "path": path,
-            "status_code": status,
-            "latency_ms": latency_ms,
-            "client_ip": f"10.0.{random.randint(1, 254)}.{random.randint(1, 254)}",
-            "request_id": f"req-{random.randint(100000, 999999)}",
-        })
+        logs.append(
+            {
+                "timestamp": _ms_to_str(current_ms),
+                "level": "WARN" if status >= 400 else "INFO",
+                "message": f"{method} {path} -> {status} ({latency_ms}ms)",
+                "http_method": method,
+                "path": path,
+                "status_code": status,
+                "latency_ms": latency_ms,
+                "client_ip": f"10.0.{random.randint(1, 254)}.{random.randint(1, 254)}",
+                "request_id": f"req-{random.randint(100000, 999999)}",
+            }
+        )
         current_ms += step
     return logs
 

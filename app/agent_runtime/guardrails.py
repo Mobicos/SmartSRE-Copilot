@@ -14,9 +14,7 @@ def sanitize_goal(goal: str, *, max_length: int = 2000) -> str:
     if not cleaned:
         raise ValueError("Goal must not be empty.")
     # Remove control characters except newlines and tabs
-    cleaned = "".join(
-        ch for ch in cleaned if ch in ("\n", "\t") or (ord(ch) >= 32)
-    )
+    cleaned = "".join(ch for ch in cleaned if ch in ("\n", "\t") or (ord(ch) >= 32))
     if len(cleaned) > max_length:
         cleaned = cleaned[:max_length]
     return cleaned

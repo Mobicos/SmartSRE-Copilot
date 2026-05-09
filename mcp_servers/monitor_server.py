@@ -127,11 +127,13 @@ def query_cpu_metrics(
     current_time = start_dt
     data_points = []
     for v in values:
-        data_points.append({
-            "timestamp": current_time.strftime("%H:%M"),
-            "value": v,
-            "process_id": "pid-12345",
-        })
+        data_points.append(
+            {
+                "timestamp": current_time.strftime("%H:%M"),
+                "value": v,
+                "process_id": "pid-12345",
+            }
+        )
         current_time += timedelta(minutes=interval_minutes)
 
     if not data_points:
@@ -220,12 +222,14 @@ def query_memory_metrics(
     current_time = start_dt
     data_points = []
     for v in values:
-        data_points.append({
-            "timestamp": current_time.strftime("%H:%M"),
-            "value": v,
-            "used_gb": round((v / 100.0) * total_gb, 2),
-            "total_gb": total_gb,
-        })
+        data_points.append(
+            {
+                "timestamp": current_time.strftime("%H:%M"),
+                "value": v,
+                "used_gb": round((v / 100.0) * total_gb, 2),
+                "total_gb": total_gb,
+            }
+        )
         current_time += timedelta(minutes=interval_minutes)
 
     if not data_points:
