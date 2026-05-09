@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hmac
 import json
 from dataclasses import dataclass
 from functools import lru_cache
@@ -56,6 +55,29 @@ def load_api_key_roles() -> dict[str, str]:
         mapping.setdefault(config.app_api_key, "admin")
 
     return mapping
+
+
+@lru_cache(maxsize=1)
+def load_api_key_subjects() -> dict[str, str]:
+    """Load stable log subjects without deriving them from secret key material."""
+    subjects: dict[str, str] = {}
+    if config.api_keys_json:
+        try:
+            raw_mapping = json.loads(config.api_keys_json)
+            if isinstance(raw_mapping, dict):
+                subject_index = 1
+                for key, value in raw_mapping.items():
+                    if str(value) not in ROLE_CAPABILITIES:
+                        continue
+                    subjects[str(key)] = f"key:configured-{subject_index}"
+                    subject_index += 1
+        except json.JSONDecodeError:
+            pass
+
+    if config.app_api_key:
+        subjects.setdefault(config.app_api_key, "key:primary")
+
+    return subjects
 
 
 def _has_capability(role: str, capability: str) -> bool:
@@ -158,10 +180,4 @@ async def require_api_key(
 
 def _api_key_subject(api_key: str) -> str:
     """Return a stable non-reversible API key subject for logs and audit rows."""
-    secret = config.app_api_key.strip() or "smartsre-api-key-subject"
-    digest = hmac.new(
-        secret.encode("utf-8"),
-        api_key.encode("utf-8"),
-        "sha256",
-    ).hexdigest()
-    return f"key:{digest[:16]}"
+    return load_api_key_subjects().get(api_key, "key:unknown")
