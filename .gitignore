@@ -48,6 +48,7 @@ poetry.lock
 # Environment
 .env
 .env.local
+.env.*.local
 /docker-compose.local.yml
 
 # Logs
