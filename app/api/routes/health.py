@@ -11,8 +11,8 @@ from loguru import logger
 from app.api.providers import get_service_health, get_vector_store_manager
 from app.core.config import AppSettings
 from app.infrastructure import redis_manager
-from app.infrastructure.tasks.dispatcher import task_dispatcher
 from app.infrastructure.tasks.agent_resume import agent_resume_dispatcher
+from app.infrastructure.tasks.dispatcher import task_dispatcher
 from app.observability import METRICS_CONTENT_TYPE, render_prometheus_metrics
 from app.platform.persistence.database import health_check as db_health_check
 from app.platform.persistence.repositories.indexing import indexing_task_repository

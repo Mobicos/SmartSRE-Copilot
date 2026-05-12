@@ -56,6 +56,9 @@ def get_engine() -> Engine:
         uri = settings.postgres_dsn.strip()
         if not uri:
             raise RuntimeError("POSTGRES_DSN must be configured")
+        if not uri.startswith("postgresql+"):
+            uri = uri.replace("postgresql://", "postgresql+psycopg://", 1)
+            uri = uri.replace("postgres://", "postgresql+psycopg://", 1)
         _engine = create_engine(
             uri,
             pool_size=_POOL_SIZE,
