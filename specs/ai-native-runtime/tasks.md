@@ -218,6 +218,127 @@
 
 ---
 
+## Phase 8: US6 — Proactive Monitor (P2)
+
+**Goal**: Agent 主动探测环境异常，自动触发诊断 run
+**Independent Test**: Mock 异常指标，验证自动创建 run + 告警推送
+
+### Implementation
+
+- [ ] T039 [P] Implement ProactiveMonitor in `app/agent_runtime/proactive.py`
+  - 按 configurable interval 周期执行探测
+  - 调用 MCP 工具获取环境指标（CPU、内存、响应时间等）
+  - 异常判定：指标超过阈值或偏离基线
+- [ ] T040 [P] Implement AlertDeduplicator in `app/agent_runtime/proactive.py`
+  - 指标 + 时间窗口去重（suppress_interval 可配置，默认 30min）
+  - 去重状态持久化到 Redis（跨进程共享）
+- [ ] T041 Implement AutoDiagnosis trigger in `app/agent_runtime/proactive.py`
+  - 异常检测到后自动创建 AgentRun，goal 为"异常指标根因分析"
+  - 复用 BoundedReActLoop 执行诊断
+  - run metadata 标记 `source=proactive`
+- [ ] T042 Implement ProactiveAlert push via SSE in `app/api/routes/agent.py`
+  - 新增 SSE 事件类型 `EVENT_PROACTIVE_ALERT`
+  - 推送内容：异常指标摘要 + run_id + 跳转链接
+  - 前端新增 alert toast / notification panel
+- [ ] T043 Implement degraded fallback in `app/agent_runtime/proactive.py`
+  - 外部监控数据源不可用时，降级到本地 MCP monitor_server 探测
+  - 记录 degraded_event
+
+### Tests
+
+- [ ] T044 [P] Unit test: AlertDeduplicator suppression logic in `tests/unit/test_proactive.py`
+  - Test: same metric within suppress_interval -> suppressed
+  - Test: same metric after suppress_interval -> not suppressed
+  - Test: different metric within interval -> not suppressed
+- [ ] T045 Integration test: full proactive flow in `tests/integration/test_proactive.py`
+  - Mock MCP tool returning abnormal metrics -> verify auto run created
+  - Mock MCP tool failure -> verify degraded path
+
+---
+
+## Phase 9: US7 — Cross-session Memory (P2)
+
+**Goal**: Agent 拥有跨会话记忆，新 run 自动检索相关历史结论
+**Independent Test**: 两次相似 run，验证第二次引用了第一次的结论
+
+### Implementation
+
+- [ ] T046 [P] Implement MemoryStore in `app/infrastructure/memory_store.py`
+  - 接口：`store(run_id, conclusion, embedding, metadata)`
+  - 接口：`retrieve(query_embedding, top_k) -> list[MemoryItem]`
+  - 存储：复用 pgvector（`knowledge_chunks` 表扩展或新建 `agent_memory` 表）
+  - Alembic migration: 新建 `agent_memory` 表（run_id, conclusion_text, embedding vector(1024), confidence, validation_count, created_at）
+- [ ] T047 [P] Implement MemoryExtractor in `app/agent_runtime/memory_extractor.py`
+  - run 结束时从 final_report 提取关键结论（根因、证据、解决方案）
+  - 调用 text-embedding-v4 生成向量
+  - 写入 MemoryStore
+- [ ] T048 Implement MemoryRetriever in `app/agent_runtime/memory_retriever.py`
+  - 新 run 启动时，将 goal 向量化，检索 top-k=5 相关历史结论
+  - 相似度阈值：cosine > 0.7 才注入 context
+  - 返回 `list[MemoryItem]`（含 run_id, conclusion, similarity, confidence）
+- [ ] T049 Integrate memory into BoundedReActLoop in `app/agent_runtime/loop.py`
+  - observe 阶段调用 MemoryRetriever，历史结论注入 DecisionContext
+  - 历史结论附带 `confidence_boost`：被后续 run 验证过的结论权重提升
+  - MemoryRetriever 失败时降级（不阻塞主流程）
+- [ ] T050 Implement MemoryValidator in `app/agent_runtime/memory_store.py`
+  - 当前 run 的结论验证了某历史结论时，`validation_count += 1`
+  - confidence = base_confidence * (1 + 0.1 * validation_count)
+
+### Tests
+
+- [ ] T051 [P] Unit test: MemoryStore retrieve with similarity threshold in `tests/unit/test_memory.py`
+  - Test: high similarity -> returned
+  - Test: below threshold -> not returned
+  - Test: empty store -> empty list
+- [ ] T052 [P] Unit test: MemoryExtractor from final_report in `tests/unit/test_memory.py`
+  - Test: extract root cause, evidence, solution from structured report
+- [ ] T053 Integration test: full memory cycle in `tests/integration/test_memory.py`
+  - Store conclusion from run #1 -> retrieve in run #2 -> verify context injection
+
+---
+
+## Phase 10: US8 — Collaborative Intervention (P3)
+
+**Goal**: 人工可在 Agent 执行过程中随时介入，修改决策和计划
+**Independent Test**: Agent 执行中注入额外证据，验证下一步决策体现
+
+### Implementation
+
+- [ ] T054 [P] Define InterventionAPI in `app/api/routes/agent.py`
+  - `POST /api/v1/agent/runs/{run_id}/intervene`
+  - Body: `{ type: "inject_evidence" | "replace_tool_call" | "modify_goal", payload: ... }`
+  - 校验：run 必须处于 `running` 状态
+- [ ] T055 [P] Implement InterventionStore in `app/platform/persistence/repositories.py`
+  - 写入 `agent_events` 表，event_type = `intervention`
+  - 持久化 intervention 类型和 payload
+- [ ] T056 Implement InterventionBridge in `app/agent_runtime/intervention.py`
+  - BoundedReActLoop 每步 observe 前检查 pending interventions
+  - `inject_evidence`: 证据追加到 DecisionContext.extra_evidence
+  - `replace_tool_call`: 覆盖当前 step 的 AgentDecision
+  - `modify_goal`: 更新 run.goal（需人工确认）
+  - 所有 intervention 记录到 agent_events
+- [ ] T057 Implement low-confidence auto-handoff in `app/agent_runtime/loop.py`
+  - 连续 N 步（default=3）置信度 < 0.3 时，Agent 自动暂停
+  - 发出 `EVENT_HUMAN_HANDOFF` SSE 事件，携带已收集证据 + 失败原因
+  - 等待人工通过 InterventionAPI 注入指导或替换工具
+  - 超时（default=120s）未收到干预 -> 产出 bounded_report
+- [ ] T058 [P] Add frontend intervention controls in `frontend/components/agent/`
+  - Agent 运行中显示"注入证据"和"替换工具"按钮
+  - 人工干预后实时反映到 Agent 事件时间线
+  - handoff 状态显示等待提示 + 超时倒计时
+
+### Tests
+
+- [ ] T059 [P] Unit test: InterventionBridge injection in `tests/unit/test_intervention.py`
+  - Test: inject_evidence -> DecisionContext.extra_evidence contains payload
+  - Test: replace_tool_call -> AgentDecision overwritten
+  - Test: intervention recorded as agent_event
+- [ ] T060 Integration test: collaborative flow in `tests/integration/test_intervention.py`
+  - Start run -> inject evidence mid-execution -> verify next decision uses evidence
+  - 3 low-confidence steps -> verify auto-handoff triggered
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -229,11 +350,15 @@
 - **Phase 5 (US4 Recovery)**: Depends on Phase 2 (US1)
 - **Phase 6 (US5 Feedback)**: Depends on Phase 4 (US3)
 - **Phase 7 (Observability)**: Depends on all above
+- **Phase 8 (US6 Proactive Monitor)**: Depends on Phase 2 (US1), Phase 4 (US3)
+- **Phase 9 (US7 Cross-session Memory)**: Depends on Phase 1 (Foundation), Phase 3 (US2)
+- **Phase 10 (US8 Collaborative Intervention)**: Depends on Phase 2 (US1), Phase 5 (US4)
 
 ### Parallel Opportunities
 
 - Phase 1: T001, T002, T003 can run in parallel
 - Phase 2+3+4: Can run in parallel after Phase 1 (different files)
+- Phase 8+9: Can run in parallel after their dependencies (different files)
 - Within each phase: tasks marked [P] can run in parallel
 
 ### MVP Checkpoint
@@ -247,9 +372,11 @@ After Phase 1 + Phase 2 + Phase 4:
 
 ### Full Delivery
 
-All 7 phases:
+All 10 phases:
 - Complete AI-native runtime with recovery and feedback loop
 - OpenTelemetry observability
-- 6 golden scenarios passing
+- Proactive monitoring and cross-session memory
+- Collaborative intervention support
+- 8 golden scenarios passing
 
-**Estimated full effort**: 9-13 days
+**Estimated full effort**: 14-18 days
