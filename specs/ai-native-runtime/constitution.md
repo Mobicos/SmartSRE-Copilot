@@ -43,6 +43,24 @@ knowledge MUST NOT enter the core knowledge base.
 Agent behavior changes MUST have scenario evals written first (failing), then
 implemented, then verified passing. Golden scenarios are the regression baseline.
 
+### IX. Proactive Intelligence
+Agents MUST actively monitor and detect anomalies, not only respond to
+user-initiated requests. Proactive monitoring MUST implement alert deduplication
+to prevent alert storms. Data source unavailability MUST trigger graceful
+degradation, not system failure.
+
+### X. Continuous Memory
+Agent diagnosis conclusions MUST be persisted as vectorized memory. New diagnosis
+runs MUST automatically retrieve relevant historical conclusions. Memory MUST
+strengthen when later runs validate prior conclusions. Memory retrieval MUST
+never block or degrade the primary diagnosis path.
+
+### XI. Collaborative Intervention
+Human intervention MUST NOT be limited to approval gates. Humans MUST be able
+to inject evidence, replace tool calls, and modify Agent plans during execution.
+Agents MUST proactively request human guidance when confidence is consistently
+low across multiple steps.
+
 ## Quality Gates
 
 Before any merge to main:
