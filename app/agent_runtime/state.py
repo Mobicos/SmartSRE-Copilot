@@ -20,10 +20,7 @@ class Hypothesis:
     @classmethod
     def from_goal(cls, goal: str) -> Hypothesis:
         return cls(
-            summary=(
-                f"调查目标「{goal}」，先检查场景知识、"
-                "已批准工具和已采集证据，再给出结论。"
-            )
+            summary=(f"调查目标「{goal}」，先检查场景知识、已批准工具和已采集证据，再给出结论。")
         )
 
 

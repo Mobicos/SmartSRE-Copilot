@@ -435,19 +435,11 @@ def get_service_health() -> dict[str, ServiceHealth]:
     return {
         "embedding": ServiceHealth(
             status="ready" if embedding_ready else "not_initialized",
-            message=(
-                "嵌入服务已初始化"
-                if embedding_ready
-                else "嵌入服务尚未初始化"
-            ),
+            message=("嵌入服务已初始化" if embedding_ready else "嵌入服务尚未初始化"),
         ),
         "vector_store": ServiceHealth(
             status="ready" if vector_store_ready else "not_initialized",
-            message=(
-                "向量存储已初始化"
-                if vector_store_ready
-                else "向量存储尚未初始化"
-            ),
+            message=("向量存储已初始化" if vector_store_ready else "向量存储尚未初始化"),
         ),
         "object_storage": ServiceHealth(
             status="ready" if object_storage_ready else "configured",
@@ -467,18 +459,10 @@ def get_service_health() -> dict[str, ServiceHealth]:
         ),
         "aiops": ServiceHealth(
             status="ready" if aiops_ready else "not_initialized",
-            message=(
-                "AIOps 应用服务已初始化"
-                if aiops_ready
-                else "AIOps 应用服务尚未初始化"
-            ),
+            message=("AIOps 应用服务已初始化" if aiops_ready else "AIOps 应用服务尚未初始化"),
         ),
         "checkpoint": ServiceHealth(
             status="ready" if checkpoint_ready else "not_initialized",
-            message=(
-                "检查点存储已初始化"
-                if checkpoint_ready
-                else "检查点存储尚未初始化"
-            ),
+            message=("检查点存储已初始化" if checkpoint_ready else "检查点存储尚未初始化"),
         ),
     }

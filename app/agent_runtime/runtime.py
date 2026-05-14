@@ -722,14 +722,10 @@ class AgentRuntime:
                             payload=recovery.model_dump(mode="json"),
                         )
                         report_contract = FinalReportContract(
-                            summary=(
-                                "证据不足以得出安全的自主结论，因此运行交由人工处理。"
-                            ),
+                            summary=("证据不足以得出安全的自主结论，因此运行交由人工处理。"),
                             verified_facts=[],
                             inferences=[
-                                (
-                                    "当前工具结果未提供足够的经验证证据来确认根因。"
-                                ),
+                                ("当前工具结果未提供足够的经验证证据来确认根因。"),
                             ],
                             recommendations=[
                                 (
@@ -769,9 +765,7 @@ class AgentRuntime:
                         strong_evidence_found = True
                         final_decision = AgentDecision(
                             action_type="final_report",
-                            reasoning_summary=(
-                                "已有充分证据支持生成最终报告。"
-                            ),
+                            reasoning_summary=("已有充分证据支持生成最终报告。"),
                             evidence=assessment,
                             actual_evidence=assessment,
                             confidence=max(assessment.confidence, 0.8),
@@ -805,20 +799,13 @@ class AgentRuntime:
                     payload=recovery.model_dump(mode="json"),
                 )
                 report_contract = FinalReportContract(
-                    summary=(
-                        "执行预算已耗尽，现有证据不足以得出安全的最终结论。"
-                    ),
+                    summary=("执行预算已耗尽，现有证据不足以得出安全的最终结论。"),
                     verified_facts=state.evidence_report_lines(),
                     inferences=[
-                        (
-                            "部分场景允许的工具因达到运行时边界而被跳过。"
-                        ),
+                        ("部分场景允许的工具因达到运行时边界而被跳过。"),
                     ],
                     recommendations=[
-                        (
-                            "增加运行预算或缩小场景工具集，"
-                            "然后根据剩余证据需求恢复运行。"
-                        ),
+                        ("增加运行预算或缩小场景工具集，然后根据剩余证据需求恢复运行。"),
                     ],
                     confidence=0.3,
                     handoff_required=True,

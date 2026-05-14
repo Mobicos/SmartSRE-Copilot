@@ -12,16 +12,10 @@ class ReportSynthesizer:
     def build_report(state: AgentRunState) -> str:
         evidence = state.evidence_report_lines()
         evidence_text = (
-            "\n".join(f"- {item}" for item in evidence)
-            if evidence
-            else "- 未采集到工具证据。"
+            "\n".join(f"- {item}" for item in evidence) if evidence else "- 未采集到工具证据。"
         )
         knowledge_lines = state.knowledge_context.to_report_lines()
-        knowledge_text = (
-            "\n".join(knowledge_lines)
-            if knowledge_lines
-            else "- 未配置场景知识库。"
-        )
+        knowledge_text = "\n".join(knowledge_lines) if knowledge_lines else "- 未配置场景知识库。"
         # Confirmed Facts: only successful evidence outputs
         confirmed_items = [item for item in state.evidence if item.status == "success"]
         if confirmed_items:
@@ -99,11 +93,7 @@ class ReportSynthesizer:
     ) -> str:
         context = knowledge_context or KnowledgeContext.empty()
         knowledge_lines = context.to_report_lines()
-        knowledge_text = (
-            "\n".join(knowledge_lines)
-            if knowledge_lines
-            else "- 未配置场景知识库。"
-        )
+        knowledge_text = "\n".join(knowledge_lines) if knowledge_lines else "- 未配置场景知识库。"
         return (
             "# SmartSRE Agent 证据报告\n\n"
             f"## 目标\n{goal}\n\n"

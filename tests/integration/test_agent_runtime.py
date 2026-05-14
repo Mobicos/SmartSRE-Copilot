@@ -309,8 +309,7 @@ def test_agent_runtime_state_objects_describe_reasoning_and_evidence():
     evidence = EvidenceItem.from_tool_result(result)
 
     assert hypothesis.summary == (
-        "调查目标「diagnose latency」，先检查场景知识、"
-        "已批准工具和已采集证据，再给出结论。"
+        "调查目标「diagnose latency」，先检查场景知识、已批准工具和已采集证据，再给出结论。"
     )
     assert action.tool_name == "SearchLog"
     assert action.arguments == {"query": "diagnose latency", "keyword": "diagnose latency"}

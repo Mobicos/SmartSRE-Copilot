@@ -851,9 +851,7 @@ def _resume_status_reason(resume_status: str) -> str:
     reasons = {
         "queued": "已批准的操作已加入检查点恢复队列。",
         "enqueue_failed": "审批已审计，但恢复队列入队失败。",
-        "deferred_until_resume_worker_enabled": (
-            "审批已审计；当前模式未启用检查点恢复工作器。"
-        ),
+        "deferred_until_resume_worker_enabled": ("审批已审计；当前模式未启用检查点恢复工作器。"),
         "pending_resume_enqueue": "审批在恢复调度前已审计。",
         "not_resumed": "审批决定已审计但未执行操作。",
         "expired": "审批请求在明确决策前已过期。",
