@@ -111,6 +111,11 @@ class DummyFeedbackRepository:
         return [{"run_id": run_id, "rating": "helpful"}]
 
 
+class DummyMemoryRepository:
+    def create_memory(self, **kwargs):
+        return "memory-1"
+
+
 def build_service(run, events):
     run_repository = DummyRunRepository(run, events)
     return NativeAgentApplicationService(
@@ -121,6 +126,7 @@ def build_service(run, events):
         tool_policy_repository=DummyPolicyRepository(),
         agent_run_repository=run_repository,
         agent_feedback_repository=DummyFeedbackRepository(),
+        agent_memory_repository=DummyMemoryRepository(),
     )
 
 
@@ -433,6 +439,11 @@ def test_derive_run_metrics_prefers_persisted_agentops_columns():
         "approval_state": "required",
         "retrieval_count": 2,
         "token_usage": {"input": 10, "output": 20},
+        "cost_estimate": {
+            "currency": "USD",
+            "total_cost": 0.034,
+            "source": "heuristic",
+        },
     }
     events = [
         {"type": "run_started", "payload": {}},
@@ -450,6 +461,13 @@ def test_derive_run_metrics_prefers_persisted_agentops_columns():
     assert metrics["approval_state"] == "required"
     assert metrics["retrieval_count"] == 2
     assert metrics["token_usage"] == {"input": 10, "output": 20}
+    assert metrics["cost_estimate"] == {
+        "currency": "USD",
+        "total_cost": 0.034,
+        "source": "heuristic",
+    }
+    assert metrics["cost_estimate_usd"] == 0.034
+    assert metrics["cost_estimate_source"] == "heuristic"
 
 
 def test_expired_pending_approval_moves_run_to_handoff():

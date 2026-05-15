@@ -235,6 +235,8 @@ class DecisionProvider(Protocol):
 class DeterministicDecisionProvider:
     """Rule-based provider used before model-backed decisioning is enabled."""
 
+    provider_name = "deterministic"
+
     def decide(self, state: AgentDecisionState) -> AgentDecision:
         if state.budget.exhausted:
             return AgentDecision(
@@ -301,6 +303,8 @@ class DeterministicDecisionProvider:
 
 class QwenDecisionProvider:
     """Structured JSON provider wrapper for Qwen-compatible chat callables."""
+
+    provider_name = "qwen"
 
     def __init__(self, invoke_json: Callable[[AgentDecisionState], str]) -> None:
         self._invoke_json = invoke_json
@@ -398,15 +402,36 @@ class AgentDecisionRuntime:
         self,
         *,
         provider: DecisionProvider | None = None,
+        fallback_provider: DecisionProvider | None = None,
         checkpoint_saver: Any | None = None,
     ) -> None:
         self._provider = provider or DeterministicDecisionProvider()
+        self._fallback_provider = fallback_provider
         self._checkpoint_saver = checkpoint_saver
         self._compiled_graph: Any | None = None
+        self._provider_fallback_events: list[dict[str, Any]] = []
 
     def decide_once(self, state: AgentDecisionState) -> AgentDecisionState:
-        decision = self._provider.decide(state)
+        try:
+            decision = self._provider.decide(state)
+        except Exception as exc:
+            if self._fallback_provider is None:
+                raise
+            decision = self._fallback_provider.decide(state)
+            self._provider_fallback_events.append(
+                {
+                    "from_provider": _provider_name(self._provider),
+                    "to_provider": _provider_name(self._fallback_provider),
+                    "reason": type(exc).__name__,
+                    "error_message": str(exc),
+                }
+            )
         return state.with_decision(decision)
+
+    def consume_provider_fallback_events(self) -> list[dict[str, Any]]:
+        events = list(self._provider_fallback_events)
+        self._provider_fallback_events.clear()
+        return events
 
     def run_graph_once(self, state: AgentDecisionState) -> AgentDecisionState:
         graph = self.build_graph()
@@ -604,6 +629,13 @@ def _state_to_graph_payload(state: AgentDecisionState) -> DecisionGraphPayload:
 
 def _state_from_graph_payload(payload: DecisionGraphPayload | dict[str, Any]) -> AgentDecisionState:
     return AgentDecisionState.model_validate(payload)
+
+
+def _provider_name(provider: DecisionProvider) -> str:
+    value = getattr(provider, "provider_name", None)
+    if isinstance(value, str) and value:
+        return value
+    return provider.__class__.__name__
 
 
 @contextmanager

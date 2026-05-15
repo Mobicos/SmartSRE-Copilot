@@ -7,9 +7,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent_runtime import (
+    AgentDecisionRuntime,
     AgentPlanner,
     AgentRuntime,
     AgentRuntimeEvent,
+    DeterministicDecisionProvider,
     EvidenceItem,
     Hypothesis,
     KnowledgeContextProvider,
@@ -189,6 +191,48 @@ class MemoryPolicyStore:
         return self._policies.get(tool_name)
 
 
+class MemoryStore:
+    def __init__(self):
+        self.created = []
+        self.results = []
+        self.last_search = None
+
+    def search_memory(self, *, workspace_id: str, query: str, limit: int = 3):
+        self.last_search = {"workspace_id": workspace_id, "query": query, "limit": limit}
+        return self.results[:limit]
+
+    def create_memory(
+        self,
+        *,
+        workspace_id: str,
+        run_id: str | None,
+        conclusion_text: str,
+        conclusion_type: str = "final_report",
+        confidence: float = 0.5,
+        metadata: dict[str, object] | None = None,
+    ) -> str:
+        memory_id = f"memory-{len(self.created) + 1}"
+        self.created.append(
+            {
+                "memory_id": memory_id,
+                "workspace_id": workspace_id,
+                "run_id": run_id,
+                "conclusion_text": conclusion_text,
+                "conclusion_type": conclusion_type,
+                "confidence": confidence,
+                "metadata": metadata,
+            }
+        )
+        return memory_id
+
+
+class FailingDecisionProvider:
+    provider_name = "qwen"
+
+    def decide(self, state):
+        raise RuntimeError("qwen unavailable")
+
+
 def test_agent_runtime_core_components_shape_agent_loop():
     planner = AgentPlanner()
     knowledge_provider = KnowledgeContextProvider()
@@ -359,6 +403,58 @@ async def test_agent_runtime_accepts_injected_persistence_ports():
     assert run_store.metrics["tool_call_count"] == 0
     assert run_store.metrics["approval_state"] == "not_required"
     assert run_store.metrics["retrieval_count"] == 0
+    assert run_store.metrics["token_usage"]["source"] == "heuristic"
+    assert run_store.metrics["token_usage"]["prompt_tokens"] > 0
+    assert run_store.metrics["token_usage"]["completion_tokens"] > 0
+    assert run_store.metrics["token_usage"]["total"] > 0
+    assert run_store.metrics["cost_estimate"]["source"] == "heuristic"
+    assert run_store.metrics["cost_estimate"]["total_cost"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_loads_and_persists_cross_session_memory():
+    run_store = MemoryRunStore()
+    memory_store = MemoryStore()
+    memory_store.results = [
+        {
+            "memory_id": "memory-existing",
+            "conclusion_text": "Earlier checkout latency was caused by pool exhaustion.",
+            "conclusion_type": "root_cause",
+            "confidence": 0.8,
+            "similarity": 0.75,
+        }
+    ]
+    runtime = AgentRuntime(
+        tool_catalog=StaticCatalog([]),
+        tool_executor=StaticExecutor(),
+        scene_store=MemorySceneStore(),
+        run_store=run_store,
+        policy_store=MemoryPolicyStore(),
+        memory_store=memory_store,
+    )
+
+    events = [
+        event
+        async for event in runtime.run(
+            scene_id="scene-1",
+            session_id="session-1",
+            goal="diagnose checkout latency",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+
+    assert events[-1].type == "complete"
+    assert memory_store.last_search == {
+        "workspace_id": "workspace-1",
+        "query": "diagnose checkout latency",
+        "limit": 3,
+    }
+    memory_event = next(event for event in run_store.events if event["type"] == "memory_context")
+    assert memory_event["payload"]["memories"][0]["memory_id"] == "memory-existing"
+    assert memory_store.created[0]["workspace_id"] == "workspace-1"
+    assert memory_store.created[0]["run_id"] == "run-1"
+    assert memory_store.created[0]["conclusion_type"] == "final_report"
+    assert memory_store.created[0]["metadata"] == {"source": "agent_run"}
 
 
 @pytest.mark.asyncio
@@ -902,6 +998,47 @@ async def test_decision_runtime_records_observation_evidence_recovery_and_handof
     assert "handoff" in event_types
     assert assessments[-1]["payload"]["quality"] == "empty"
     assert run_store.metrics["handoff_reason"] == "insufficient_evidence"
+
+
+@pytest.mark.asyncio
+async def test_decision_runtime_records_provider_fallback_event():
+    run_store = MemoryRunStore()
+    scene_store = MemorySceneStore()
+    scene_store.scene["tools"] = ["SearchLog"]
+    scene_store.scene["agent_config"] = {"decision_runtime_enabled": True}
+    runtime = AgentRuntime(
+        tool_catalog=StaticCatalog([SimpleNamespace(name="SearchLog", description="Search logs")]),
+        tool_executor=StaticExecutor(),
+        scene_store=scene_store,
+        run_store=run_store,
+        policy_store=MemoryPolicyStore(),
+        decision_runtime=AgentDecisionRuntime(
+            provider=FailingDecisionProvider(),
+            fallback_provider=DeterministicDecisionProvider(),
+        ),
+    )
+
+    events = [
+        event
+        async for event in runtime.run(
+            scene_id="scene-1",
+            session_id="session-1",
+            goal="diagnose current alerts",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+
+    fallback_event = next(
+        event for event in run_store.events if event["type"] == "provider_fallback"
+    )
+
+    assert events[-1].type == "complete"
+    assert fallback_event["payload"] == {
+        "from_provider": "qwen",
+        "to_provider": "deterministic",
+        "reason": "RuntimeError",
+        "error_message": "qwen unavailable",
+    }
 
 
 @pytest.mark.asyncio

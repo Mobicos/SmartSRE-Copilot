@@ -81,6 +81,7 @@ export interface NativeDecisionPayload {
 export interface NativeAgentEventPayload {
   goal?: string
   trace_id?: string | null
+  memories?: NativeAgentMemory[]
   decision?: NativeDecisionPayload
   hypotheses?: Array<Record<string, unknown>>
   quality?: string
@@ -91,6 +92,38 @@ export interface NativeAgentEventPayload {
   inferences?: string[]
   recommendations?: string[]
   [key: string]: unknown
+}
+
+export interface NativeAgentMemory {
+  memory_id?: string
+  run_id?: string | null
+  conclusion_text?: string
+  conclusion_type?: string
+  confidence?: number
+  similarity?: number
+  metadata?: Record<string, unknown> | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface NativeAgentBadcase {
+  feedback_id: string
+  run_id: string
+  rating: string
+  comment?: string | null
+  correction?: string | null
+  badcase_flag?: boolean
+  original_report?: string | null
+  review_status?: "pending" | "confirmed" | "rejected" | string
+  review_note?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  knowledge_status?: "not_promoted" | "queued" | "processing" | "completed" | string
+  knowledge_task_id?: string | null
+  knowledge_filename?: string | null
+  promoted_at?: string | null
+  created_at?: string
+  run?: NativeAgentRun
 }
 
 export interface NativeAgentRunMetrics {
