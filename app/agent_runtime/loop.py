@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import monotonic
+from typing import Any, Protocol
 
 from app.agent_runtime.decision import (
     AgentDecision,
@@ -13,6 +15,7 @@ from app.agent_runtime.decision import (
     DeterministicDecisionProvider,
     RuntimeBudget,
 )
+from app.agent_runtime.trace_collector import TraceCollector
 
 TerminalAction = {"ask_approval", "final_report", "handoff"}
 
@@ -57,6 +60,18 @@ class LoopResult:
         return len(self.steps)
 
 
+class LoopTraceCollector(Protocol):
+    """Tracing boundary used by the loop without depending on OTel directly."""
+
+    @contextmanager
+    def span(
+        self,
+        name: str,
+        attributes: dict[str, Any] | None = None,
+    ) -> Iterator[None]:
+        """Open an optional tracing span."""
+
+
 class BoundedReActLoop:
     """Run structured observe/decide steps under strict budget boundaries.
 
@@ -69,9 +84,11 @@ class BoundedReActLoop:
         self,
         provider: DecisionProvider | None = None,
         token_estimator: Callable[[AgentDecision], int] | None = None,
+        trace_collector: LoopTraceCollector | None = None,
     ) -> None:
         self._provider = provider or DeterministicDecisionProvider()
         self._token_estimator = token_estimator or _zero_token_estimator
+        self._trace_collector = trace_collector or TraceCollector()
 
     def run(self, state: AgentDecisionState, budget: LoopBudget | None = None) -> LoopResult:
         budget = (budget or _budget_from_state(state)).normalize()
@@ -95,7 +112,15 @@ class BoundedReActLoop:
                 budget=budget,
                 remaining_steps=budget.max_steps - step_index,
             )
-            decision = self._provider.decide(current_state)
+            with self._trace_collector.span(
+                "agent.loop_step",
+                {
+                    "agent.run_id": str(current_state.run_id or ""),
+                    "agent.step_index": step_index,
+                    "agent.max_steps": budget.max_steps,
+                },
+            ):
+                decision = self._provider.decide(current_state)
             step_tokens = self._token_estimator(decision)
             token_usage += step_tokens
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Any
+
 from app.agent_runtime.decision import AgentDecision, AgentDecisionState, AgentGoalContract
 from app.agent_runtime.evidence import EvidenceAssessor
 from app.agent_runtime.loop import BoundedReActLoop, LoopBudget
@@ -19,6 +22,16 @@ class _RepeatingProvider:
         )
 
 
+class _RecordingTraceCollector:
+    def __init__(self) -> None:
+        self.spans: list[tuple[str, dict[str, Any] | None]] = []
+
+    @contextmanager
+    def span(self, name: str, attributes: dict[str, Any] | None = None):
+        self.spans.append((name, attributes))
+        yield
+
+
 def test_bounded_react_loop_stops_at_max_steps():
     state = AgentDecisionState(
         run_id="run-1",
@@ -33,6 +46,43 @@ def test_bounded_react_loop_stops_at_max_steps():
     assert result.termination_reason == "max_steps_reached"
     assert result.step_count == 2
     assert [step.step_index for step in result.steps] == [0, 1]
+
+
+def test_bounded_react_loop_records_trace_span_for_each_step():
+    state = AgentDecisionState(
+        run_id="run-1",
+        goal=AgentGoalContract(goal="diagnose latency"),
+        available_tools=["SearchLog"],
+    )
+    trace_collector = _RecordingTraceCollector()
+
+    result = BoundedReActLoop(
+        provider=_RepeatingProvider(),
+        trace_collector=trace_collector,
+    ).run(
+        state,
+        LoopBudget(max_steps=2, max_time_seconds=30),
+    )
+
+    assert result.step_count == 2
+    assert trace_collector.spans == [
+        (
+            "agent.loop_step",
+            {
+                "agent.run_id": "run-1",
+                "agent.step_index": 0,
+                "agent.max_steps": 2,
+            },
+        ),
+        (
+            "agent.loop_step",
+            {
+                "agent.run_id": "run-1",
+                "agent.step_index": 1,
+                "agent.max_steps": 2,
+            },
+        ),
+    ]
 
 
 def test_evidence_assessor_accepts_mapping_outputs_as_strong_evidence():

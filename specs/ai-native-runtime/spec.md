@@ -30,6 +30,7 @@ Implemented or mostly implemented:
   cancellation, timeout, and unexpected-error failure boundaries.
 - `TraceCollector` is isolated in `app/agent_runtime/trace_collector.py` and
   guards runtime spans without making OpenTelemetry a hard dependency.
+- `BoundedReActLoop` records an `agent.loop_step` span for each decision step.
 - Deterministic and Qwen decision providers share the current decision runtime,
   and Qwen failures emit `provider_fallback` before falling back.
 - Cross-session memory exists as text memory and is injected through

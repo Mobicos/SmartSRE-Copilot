@@ -238,8 +238,9 @@ editing code:
 - [ ] T035 Implement TraceCollector in `app/agent_runtime/trace_collector.py`
   - Each loop step produces OpenTelemetry span
   - Attributes: step_index, tool_name, evidence_quality, token_usage, cost
-  - Status: optional span collector extracted and tool-call span wired; per-step loop spans pending
-- [ ] T036 Integrate TraceCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
+  - Status: optional span collector extracted; tool-call and loop-step spans wired;
+    evidence_quality/token_usage/cost attributes pending
+- [x] T036 Integrate TraceCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
 - [ ] T037 [P] Update golden scenario eval tests in `tests/agent_scenarios/`
   - 6 golden scenarios all pass regression eval
 - [ ] T038 Update CLAUDE.md and `docs/` architecture documentation
