@@ -343,6 +343,20 @@
         "title": "SceneCreateRequest",
         "type": "object"
       },
+      "SceneDeleteBatchRequest": {
+        "properties": {
+          "name_prefix": {
+            "minLength": 1,
+            "title": "Name Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name_prefix"
+        ],
+        "title": "SceneDeleteBatchRequest",
+        "type": "object"
+      },
       "SessionInfoResponse": {
         "description": "Chat session information response.",
         "properties": {
@@ -2278,7 +2292,118 @@
         ]
       }
     },
+    "/api/v1/scenes/batch-delete": {
+      "post": {
+        "operationId": "NativeAgent-batch_delete_scenes-post-api_v1_scenes_batch_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneDeleteBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Delete Scenes",
+        "tags": [
+          "NativeAgent"
+        ]
+      }
+    },
     "/api/v1/scenes/{scene_id}": {
+      "delete": {
+        "operationId": "NativeAgent-delete_scene-delete-api_v1_scenes_scene_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scene_id",
+            "required": true,
+            "schema": {
+              "title": "Scene Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scene",
+        "tags": [
+          "NativeAgent"
+        ]
+      },
       "get": {
         "operationId": "NativeAgent-get_scene-get-api_v1_scenes_scene_id",
         "parameters": [

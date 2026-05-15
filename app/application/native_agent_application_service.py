@@ -87,6 +87,12 @@ class NativeAgentApplicationService:
     def get_scene(self, scene_id: str) -> dict[str, Any] | None:
         return self._scene_repository.get_scene(scene_id)
 
+    def delete_scene(self, scene_id: str) -> bool:
+        return self._scene_repository.delete_scene(scene_id)
+
+    def delete_scenes_by_name_prefix(self, name_prefix: str) -> int:
+        return self._scene_repository.delete_scenes_by_name_prefix(name_prefix)
+
     async def list_tools(self) -> list[dict[str, Any]]:
         tools = await self._tool_catalog.get_tools("diagnosis")
         policies = {
