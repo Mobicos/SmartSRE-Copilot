@@ -60,8 +60,9 @@ class RuntimeSafetyConfig:
     def from_scene(
         cls,
         scene: dict[str, Any],
-        settings: AppSettings,
+        settings: AppSettings | None = None,
     ) -> RuntimeSafetyConfig:
+        settings = settings or AppSettings.from_env()
         agent_config = scene.get("agent_config")
         if not isinstance(agent_config, dict):
             agent_config = {}
@@ -390,7 +391,7 @@ class AgentRuntime:
 
     def __init__(
         self,
-        settings: AppSettings,
+        settings: AppSettings | None = None,
         *,
         tool_catalog: Any | None = None,
         tool_executor: Any | None = None,
@@ -404,7 +405,7 @@ class AgentRuntime:
         knowledge_context_provider: KnowledgeContextProvider | None = None,
         decision_runtime: AgentDecisionRuntime | None = None,
     ) -> None:
-        self._settings = settings
+        self._settings = settings or AppSettings.from_env()
         self._scene_store = _required_dependency(scene_store, "scene_store")
         self._run_store = _required_dependency(run_store, "run_store")
         self._policy_store = _required_dependency(policy_store, "policy_store")
