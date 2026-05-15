@@ -7,6 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import delete, update
 from sqlmodel import Session, col, select
 
 from app.agent_runtime.ports import AgentRunStore, SceneStore, ToolPolicyStore
@@ -296,6 +297,36 @@ class SceneRepository(SceneStore):
     def get_scene(self, scene_id: str) -> dict[str, Any] | None:
         with Session(bind=get_engine()) as db:
             return self.get_scene_with_session(db, scene_id)
+
+    def delete_scene_with_session(self, db: Session, scene_id: str) -> bool:
+        scene = db.get(Scene, scene_id)
+        if scene is None:
+            return False
+        db.exec(
+            update(AgentRun)
+            .where(col(AgentRun.scene_id) == scene_id)
+            .values(scene_id=None, updated_at=_utc_now())
+        )
+        db.exec(delete(SceneKnowledgeBase).where(col(SceneKnowledgeBase.scene_id) == scene_id))
+        db.exec(delete(SceneTool).where(col(SceneTool.scene_id) == scene_id))
+        db.delete(scene)
+        return True
+
+    def delete_scene(self, scene_id: str) -> bool:
+        with Session(bind=get_engine()) as db:
+            deleted = self.delete_scene_with_session(db, scene_id)
+            db.commit()
+            return deleted
+
+    def delete_scenes_by_name_prefix(self, name_prefix: str) -> int:
+        with Session(bind=get_engine()) as db:
+            rows = db.exec(select(Scene).where(Scene.name.startswith(name_prefix))).all()
+            deleted_count = 0
+            for scene in rows:
+                if self.delete_scene_with_session(db, scene.scene_id):
+                    deleted_count += 1
+            db.commit()
+            return deleted_count
 
     @staticmethod
     def _row_to_dict(row: Any, *, include_links: bool) -> dict[str, Any]:

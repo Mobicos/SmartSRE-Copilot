@@ -31,6 +31,10 @@ class AgentApprovalDecisionRequest(BaseModel):
     comment: str | None = None
 
 
+class SceneDeleteBatchRequest(BaseModel):
+    name_prefix: str = Field(min_length=1)
+
+
 @router.post("/workspaces")
 async def create_workspace(
     request: WorkspaceCreateRequest,
@@ -130,6 +134,42 @@ async def get_scene(
     return json_response(
         status_code=200,
         content={"code": 200, "message": "success", "data": scene},
+    )
+
+
+@router.delete("/scenes/{scene_id}")
+async def delete_scene(
+    scene_id: str,
+    _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    deleted = native_agent_service.delete_scene(scene_id)
+    if not deleted:
+        return JSONResponse(status_code=404, content={"code": 404, "message": "not_found"})
+    return json_response(
+        status_code=200,
+        content={"code": 200, "message": "success", "data": {"deleted": True}},
+    )
+
+
+@router.post("/scenes/batch-delete")
+async def batch_delete_scenes(
+    request: SceneDeleteBatchRequest,
+    _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    deleted_count = native_agent_service.delete_scenes_by_name_prefix(request.name_prefix)
+    return json_response(
+        status_code=200,
+        content={
+            "code": 200,
+            "message": "success",
+            "data": {"deleted_count": deleted_count},
+        },
     )
 
 

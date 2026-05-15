@@ -5,8 +5,8 @@ from app.infrastructure.tasks import LocalTaskDispatcher
 
 
 async def test_database_enqueue_wakes_embedded_worker(monkeypatch):
-    dispatcher = LocalTaskDispatcher()
     monkeypatch.setattr(config, "task_queue_backend", "database")
+    dispatcher = LocalTaskDispatcher()
     dispatcher._started = True
 
     await dispatcher.enqueue_indexing_task("task-1", "/tmp/ops.md")
@@ -15,10 +15,10 @@ async def test_database_enqueue_wakes_embedded_worker(monkeypatch):
 
 
 async def test_redis_enqueue_publishes_task_payload(monkeypatch):
-    dispatcher = LocalTaskDispatcher()
     published: list[tuple[str, dict[str, str]]] = []
     monkeypatch.setattr(config, "task_queue_backend", "redis")
     monkeypatch.setattr(config, "redis_task_queue_name", "queue")
+    dispatcher = LocalTaskDispatcher()
     monkeypatch.setattr(
         "app.infrastructure.tasks.dispatcher.redis_manager.enqueue_json",
         lambda queue, payload: published.append((queue, payload)),
@@ -30,9 +30,9 @@ async def test_redis_enqueue_publishes_task_payload(monkeypatch):
 
 
 def test_republish_queued_tasks_to_redis(monkeypatch):
-    dispatcher = LocalTaskDispatcher()
     published: list[tuple[str, dict[str, str]]] = []
     monkeypatch.setattr(config, "redis_task_queue_name", "queue")
+    dispatcher = LocalTaskDispatcher()
     monkeypatch.setattr(
         "app.infrastructure.tasks.dispatcher.indexing_task_repository.list_tasks_by_status",
         lambda statuses: [
