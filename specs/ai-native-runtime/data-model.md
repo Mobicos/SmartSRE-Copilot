@@ -52,11 +52,11 @@ They already exist. The task is to make MetricsCollector write real values.
 
 | Column | Type | Table | Description |
 |--------|------|-------|-------------|
-| evidence_quality | VARCHAR(20) | agent_events | strong/moderate/weak/insufficient/conflict/error |
+| evidence_quality | VARCHAR(20) | agent_events | strong/partial/weak/insufficient/conflict/error |
 | recovery_action | VARCHAR(50) | agent_events | retry_same_tool/try_alternative/downgrade_report/handoff |
 | step_index | INTEGER | agent_events | Which loop step this event belongs to |
-| token_usage | INTEGER | agent_events | Tokens consumed in this step |
-| cost_estimate | DOUBLE PRECISION | agent_events | Cost of this step |
+| token_usage | JSONB | agent_events | Token breakdown for this step |
+| cost_estimate | JSONB | agent_events | Cost breakdown for this step |
 
 ### agent_feedback
 
@@ -66,15 +66,18 @@ They already exist. The task is to make MetricsCollector write real values.
 | run_id | VARCHAR | existing FK | FK to agent_runs |
 | rating | VARCHAR | existing | useful/useless/corrected |
 | comment | TEXT | existing | User comment |
+| correction | TEXT | existing | User-provided correction text |
+| badcase_flag | BOOLEAN | existing | Whether this is a badcase |
+| original_report | TEXT | existing | Agent's original report for comparison |
+| review_status | VARCHAR | existing | pending/confirmed/rejected |
+| review_note | TEXT | existing | Reviewer note |
+| reviewed_by | VARCHAR | existing | Reviewer identity |
+| reviewed_at | TIMESTAMP | existing | Review timestamp |
+| knowledge_status | VARCHAR | existing | not_queued/queued/failed |
+| knowledge_task_id | VARCHAR | existing | Indexing task ID |
+| knowledge_filename | VARCHAR | existing | Generated knowledge markdown filename |
+| promoted_at | TIMESTAMP | existing | Knowledge promotion timestamp |
 | created_at | TIMESTAMP | existing | Feedback timestamp |
-
-### New columns needed (Alembic migration required)
-
-| Column | Type | Table | Description |
-|--------|------|-------|-------------|
-| correction | TEXT | agent_feedback | User-provided correction text |
-| badcase_flag | BOOLEAN | agent_feedback | Whether this is a badcase |
-| original_report | TEXT | agent_feedback | Agent's original report for comparison |
 
 ## New Entities (In-Memory, Not Persisted)
 

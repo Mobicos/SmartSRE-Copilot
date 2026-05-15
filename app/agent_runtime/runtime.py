@@ -8,7 +8,6 @@ policy gates, assesses evidence, and persists every step as replayable events.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -17,18 +16,10 @@ from typing import Any, cast
 
 from loguru import logger
 
-from app.agent_runtime.constants import (
-    CONFIDENCE_LOW,
-    CONFIDENCE_NONE,
-    CONFIDENCE_PARTIAL,
-    CONFIDENCE_STRONG,
-    RUNTIME_VERSION,
-)
 from app.agent_runtime.context import KnowledgeContextProvider
 from app.agent_runtime.decision import (
     AgentDecision,
     AgentDecisionRuntime,
-    EvidenceAssessment,
     FinalReportContract,
     Priority,
     RecoveryDecision,
@@ -37,8 +28,10 @@ from app.agent_runtime.decision import (
     build_initial_decision_state,
 )
 from app.agent_runtime.events import AgentRuntimeEvent
+from app.agent_runtime.evidence import EvidenceAssessor
 from app.agent_runtime.executor import AgentToolExecutor
 from app.agent_runtime.guardrails import sanitize_goal
+from app.agent_runtime.metrics_collector import MetricsCollector
 from app.agent_runtime.planner import AgentPlanner
 from app.agent_runtime.policy import ToolPolicyGate
 from app.agent_runtime.ports import AgentMemoryStore, AgentRunStore, SceneStore, ToolPolicyStore
@@ -166,39 +159,6 @@ class EventRecorder:
             message=message,
             payload=payload,
         )
-
-
-class MetricsCollector:
-    """Derive and persist run-level metrics from stored events."""
-
-    def __init__(self, run_store: AgentRunStore, settings: AppSettings) -> None:
-        self._run_store = run_store
-        self._settings = settings
-
-    def persist(self, run_id: str) -> None:
-        try:
-            run = self._run_store.get_run(run_id)
-            events = self._run_store.list_events(run_id)
-            if run is None:
-                return
-            self._run_store.update_run_metrics(
-                run_id,
-                runtime_version=RUNTIME_VERSION,
-                trace_id=run_id,
-                model_name=_runtime_model_name(self._settings),
-                decision_provider=_runtime_decision_provider(self._settings),
-                step_count=_metric_step_count(events),
-                tool_call_count=len(_events_by_type(events, "tool_call")),
-                latency_ms=_latency_ms(run.get("created_at"), run.get("updated_at")),
-                error_type=_metric_error_type(run, events),
-                approval_state=_metric_approval_state(events),
-                retrieval_count=len(_events_by_type(events, "knowledge_context")),
-                token_usage=_metric_token_usage(run, events, self._settings),
-                cost_estimate=_metric_cost_estimate(run, events, self._settings),
-                handoff_reason=_metric_handoff_reason(run, events),
-            )
-        except Exception as exc:
-            logger.warning(f"Failed to persist agent run metrics for {run_id}: {exc}")
 
 
 class StepRunner:
@@ -420,6 +380,7 @@ class AgentRuntime:
         self._policy_gate = policy_gate or ToolPolicyGate(policy_store=self._policy_store)
         self._action_executor = action_executor or AgentToolExecutor(tool_executor=tool_executor)
         self._synthesizer = synthesizer or ReportSynthesizer()
+        self._evidence_assessor = EvidenceAssessor()
         self._knowledge_context_provider = knowledge_context_provider or KnowledgeContextProvider()
         self._decision_runtime = decision_runtime or AgentDecisionRuntime()
         self._step_runner = StepRunner(self)
@@ -716,7 +677,7 @@ class AgentRuntime:
                 evidence_item = EvidenceItem.from_tool_result(result)
                 state.add_evidence(evidence_item)
                 if decision_runtime_enabled:
-                    assessment = _assess_evidence_item(evidence_item)
+                    assessment = self._evidence_assessor.assess(evidence_item)
                     yield self._record_event(
                         run_id,
                         event_type="evidence_assessment",
@@ -733,7 +694,7 @@ class AgentRuntime:
                             yield event
                         return
                     if assessment.quality in {"empty", "error", "conflicting"}:
-                        reason = _handoff_reason_from_evidence(assessment)
+                        reason = self._evidence_assessor.handoff_reason(assessment)
                         recovery = RecoveryDecision(
                             required=True,
                             reason=reason,
@@ -1093,68 +1054,6 @@ def _decision_runtime_enabled(scene: dict[str, Any]) -> bool:
     return value if value is not None else True
 
 
-def _runtime_model_name(settings: AppSettings) -> str:
-    provider = settings.agent_decision_provider.strip().lower()
-    if provider == "qwen":
-        return settings.dashscope_model
-    return "deterministic-native-agent"
-
-
-def _runtime_decision_provider(settings: AppSettings) -> str:
-    provider = settings.agent_decision_provider.strip().lower()
-    return provider or "deterministic"
-
-
-def _assess_evidence_item(evidence: EvidenceItem) -> EvidenceAssessment:
-    citation = {
-        "source": "tool",
-        "tool_name": evidence.tool_name,
-        "status": evidence.status,
-    }
-    if evidence.status in {"timeout", "disabled", "forbidden"} or evidence.error:
-        return EvidenceAssessment(
-            quality="error",
-            summary=f"{evidence.tool_name} 返回 {evidence.status}：{evidence.error or '无详情'}",
-            citations=[citation],
-            confidence=CONFIDENCE_NONE,
-        )
-    if evidence.status == "approval_required":
-        return EvidenceAssessment(
-            quality="partial",
-            summary=f"{evidence.tool_name} 需要审批才能采集证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_LOW,
-        )
-    if evidence.status == "partial":
-        return EvidenceAssessment(
-            quality="partial",
-            summary=f"{evidence.tool_name} 返回了部分证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_PARTIAL,
-        )
-    if evidence.output in {None, ""}:
-        return EvidenceAssessment(
-            quality="empty",
-            summary=f"{evidence.tool_name} 未返回可用证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_NONE,
-        )
-    return EvidenceAssessment(
-        quality="strong",
-        summary=f"{evidence.tool_name} 返回了可用证据。",
-        citations=[citation],
-        confidence=CONFIDENCE_STRONG,
-    )
-
-
-def _handoff_reason_from_evidence(assessment: EvidenceAssessment) -> str:
-    if assessment.quality == "empty":
-        return "insufficient_evidence"
-    if assessment.quality == "conflicting":
-        return "conflicting_evidence"
-    return "evidence_error"
-
-
 def _handoff_report(goal: str, report: FinalReportContract) -> str:
     lines = [
         f"# Agent 交接报告：{goal}",
@@ -1186,160 +1085,8 @@ def _optional_span(name: str, attributes: dict[str, Any]):
         yield
 
 
-def _events_by_type(events: list[dict[str, Any]], event_type: str) -> list[dict[str, Any]]:
-    return [event for event in events if event.get("type") == event_type]
-
-
 def _memory_excerpt(text: str, *, limit: int = 2000) -> str:
     normalized = text.strip()
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3].rstrip()}..."
-
-
-def _metric_step_count(events: list[dict[str, Any]]) -> int:
-    step_events = {"hypothesis", "decision", "tool_call", "tool_result"}
-    return len([event for event in events if event.get("type") in step_events])
-
-
-def _metric_approval_state(events: list[dict[str, Any]]) -> str:
-    for event in events:
-        payload = event.get("payload")
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("approval_state") == "required":
-            return "required"
-        if payload.get("execution_status") == "approval_required":
-            return "required"
-    return "not_required"
-
-
-def _metric_error_type(run: dict[str, Any], events: list[dict[str, Any]]) -> str | None:
-    for event in reversed(events):
-        if event.get("type") not in {"timeout", "error"}:
-            continue
-        payload = event.get("payload")
-        if isinstance(payload, dict) and payload.get("error_type"):
-            return str(payload["error_type"])
-    error_message = run.get("error_message")
-    if isinstance(error_message, str) and ":" in error_message:
-        return error_message.split(":", 1)[0]
-    return None
-
-
-def _metric_handoff_reason(run: dict[str, Any], events: list[dict[str, Any]]) -> str | None:
-    for event in reversed(events):
-        if event.get("type") not in {"handoff", "recovery"}:
-            continue
-        payload = event.get("payload")
-        if isinstance(payload, dict) and payload.get("handoff_reason"):
-            return str(payload["handoff_reason"])
-        if isinstance(payload, dict) and payload.get("reason"):
-            return str(payload["reason"])
-    if run.get("status") == "handoff_required":
-        error_message = run.get("error_message")
-        return str(error_message) if error_message else "handoff_required"
-    return None
-
-
-def _metric_token_usage(
-    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
-) -> dict[str, Any]:
-    """Estimate token usage from persisted runtime artifacts.
-
-    Deterministic runs do not receive provider token accounting, so this keeps
-    AgentOps fields attributable without pretending to be vendor billing data.
-    """
-
-    prompt_sources: list[Any] = [
-        run.get("goal"),
-        run.get("session_id"),
-        [
-            event.get("payload")
-            for event in events
-            if event.get("type") in {"run_started", "hypothesis", "observation", "tool_call"}
-        ],
-    ]
-    completion_sources: list[Any] = [
-        run.get("final_report"),
-        [
-            {
-                "message": event.get("message"),
-                "payload": event.get("payload"),
-            }
-            for event in events
-            if event.get("type")
-            in {"decision", "evidence_assessment", "recovery", "handoff", "final_report"}
-        ],
-    ]
-    tool_output_sources: list[Any] = [
-        event.get("payload") for event in events if event.get("type") == "tool_result"
-    ]
-
-    prompt_tokens = _estimate_tokens(prompt_sources)
-    completion_tokens = _estimate_tokens(completion_sources)
-    tool_output_tokens = _estimate_tokens(tool_output_sources)
-    return {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "tool_output_tokens": tool_output_tokens,
-        "total": prompt_tokens + completion_tokens + tool_output_tokens,
-        "model": _runtime_model_name(settings),
-        "source": "heuristic",
-    }
-
-
-def _metric_cost_estimate(
-    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
-) -> dict[str, Any]:
-    token_usage = _metric_token_usage(run, events, settings)
-    tool_call_count = len(_events_by_type(events, "tool_call"))
-    retrieval_count = len(_events_by_type(events, "knowledge_context"))
-    return {
-        "currency": "USD",
-        "total_cost": _estimate_agentops_cost(
-            token_usage=token_usage,
-            tool_call_count=tool_call_count,
-            retrieval_count=retrieval_count,
-        ),
-        "model": _runtime_model_name(settings),
-        "source": "heuristic",
-        "components": {
-            "tokens": token_usage["total"],
-            "tool_calls": tool_call_count,
-            "retrievals": retrieval_count,
-        },
-    }
-
-
-def _estimate_tokens(value: Any) -> int:
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-    except TypeError:
-        encoded = str(value)
-    compact = encoded.strip()
-    if not compact or compact in {"null", "[]", "{}"}:
-        return 0
-    return max(1, (len(compact) + 3) // 4)
-
-
-def _estimate_agentops_cost(
-    *,
-    token_usage: dict[str, Any],
-    tool_call_count: int,
-    retrieval_count: int,
-) -> float:
-    token_total = int(token_usage.get("total") or 0)
-    token_cost = token_total * 0.000002
-    tool_cost = tool_call_count * 0.01
-    retrieval_cost = retrieval_count * 0.002
-    return round(token_cost + tool_cost + retrieval_cost, 6)
-
-
-def _latency_ms(created_at: Any, updated_at: Any) -> int | None:
-    if created_at is None or updated_at is None:
-        return None
-    try:
-        return int((updated_at - created_at).total_seconds() * 1000)
-    except AttributeError:
-        return None

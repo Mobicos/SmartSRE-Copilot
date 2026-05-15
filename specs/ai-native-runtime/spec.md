@@ -2,8 +2,57 @@
 
 **Feature Branch**: `feature/ai-native-runtime`
 **Created**: 2026-05-13
-**Status**: Draft
+**Status**: Draft / Implementation In Progress
 **Constitution**: [constitution.md](./constitution.md)
+
+## Implementation Status (2026-05-15)
+
+This specification is still the target contract for the AI Native Runtime. The
+current codebase has implemented several supporting capabilities, but it has not
+yet reached the full completion state described here.
+
+Implemented or mostly implemented:
+
+- Native Agent run APIs, replay APIs, approval APIs, feedback APIs, and badcase
+  review / promotion APIs exist.
+- `BoundedReActLoop` exists as an isolated loop skeleton with step, time, and
+  token budget boundaries, but it is not yet wired into `AgentRuntime.run()`.
+- `agent_runs` already stores runtime metrics fields such as `runtime_version`,
+  `trace_id`, `decision_provider`, `step_count`, `token_usage`, and
+  `cost_estimate`.
+- `MetricsCollector` is isolated in `app/agent_runtime/metrics_collector.py` and
+  persists non-empty heuristic token / cost metrics for deterministic runs.
+- `EvidenceAssessor` is isolated in `app/agent_runtime/evidence.py` for current
+  tool-result quality classification and handoff reason mapping.
+- Deterministic and Qwen decision providers share the current decision runtime,
+  and Qwen failures emit `provider_fallback` before falling back.
+- Cross-session memory exists as text memory and is injected through
+  `memory_context` events.
+- Badcase feedback, review, and knowledge-promotion queueing are available.
+
+Partially implemented:
+
+- The production runtime loop is still orchestrated inside
+  `app/agent_runtime/runtime.py`; the extracted `BoundedReActLoop` skeleton must
+  still be integrated.
+- Evidence assessment has a dedicated module, but conflict detection and richer
+  evidence coverage rules still need to be implemented.
+- Recovery behavior still exists in runtime helpers; there is no dedicated
+  `RecoveryManager` module yet.
+- Replay exposes metrics, memory, approval, badcase, and recovery events, but
+  per-step `agent_events` metric columns are not persisted yet.
+- Agent memory does not yet use pgvector embeddings for semantic retrieval.
+
+Not implemented yet:
+
+- Proactive monitor, alert deduplication, and automatic diagnosis triggers.
+- Collaborative intervention APIs and frontend controls.
+- OpenTelemetry span collector and Grafana dashboard artifacts for AgentOps.
+- Full pgvector-backed memory retrieval and badcase clustering / FAQ candidate
+  workflow.
+
+Local-only planning files such as `PLAN.md` and
+`specs/ai-native-runtime/plan.md` must stay untracked.
 
 ## User Scenarios & Testing
 

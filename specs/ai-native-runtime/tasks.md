@@ -10,17 +10,41 @@
 
 ---
 
+## Current Implementation Snapshot (2026-05-15)
+
+The checklist below remains the target work queue. Current `main` is not a blank
+slate, so future agents should treat these statuses as the baseline before
+editing code:
+
+- Implemented: Native Agent APIs, replay APIs, approval APIs, feedback APIs,
+  badcase review / promotion APIs, run-level metrics columns, deterministic/Qwen
+  provider fallback, text-based cross-session memory, extracted
+  `BoundedReActLoop` skeleton, extracted `EvidenceAssessor`, and frontend
+  workbench coverage for memory, badcase, approval, and scenario flows.
+- Partial: runtime loop orchestration, recovery handling, replay metrics, and
+  memory injection exist but are still embedded in broader modules and need
+  extraction / hardening. Metrics collection has been extracted to
+  `app/agent_runtime/metrics_collector.py`; evidence classification has been
+  extracted to `app/agent_runtime/evidence.py`, but conflict detection is still
+  pending.
+- Not started: dedicated `EvidenceAssessor`, `RecoveryManager`,
+  `TraceCollector`, proactive monitor, collaborative intervention, pgvector
+  memory embeddings, badcase clustering, FAQ candidates, and per-step
+  `agent_events` metric columns.
+- Private planning files: `PLAN.md` and `specs/ai-native-runtime/plan.md` are
+  local-only and must not be committed.
+
 ## Phase 1: Foundation (Blocking Prerequisites)
 
 **Purpose**: Core infrastructure that ALL user stories depend on
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T001 [P] Create BoundedReActLoop skeleton in `app/agent_runtime/loop.py`
+- [x] T001 [P] Create BoundedReActLoop skeleton in `app/agent_runtime/loop.py`
   - Define loop interface: `run(goal, budget) -> LoopResult`
   - Implement step counter and budget checking
   - Initially only call DeterministicDecisionProvider
-- [ ] T002 [P] Extract MetricsCollector from runtime.py to `app/agent_runtime/metrics_collector.py`
+- [x] T002 [P] Extract MetricsCollector from runtime.py to `app/agent_runtime/metrics_collector.py`
   - Current class lives inline in runtime.py (line 169)
   - Accept token_usage (JSON), cost_estimate (JSON), latency_ms, step_count
   - Persist to agent_runs table with real values (no more None)
@@ -57,6 +81,7 @@
 - [ ] T008 Implement assess phase (EvidenceAssessment) in `app/agent_runtime/evidence.py`
   - Assess tool output quality: strong/moderate/weak/insufficient/conflict/error
   - Evidence conflict detection (two tools contradict)
+  - Status: basic tool-result classification extracted; conflict detection is pending
 - [ ] T009 Implement final_report phase in `app/agent_runtime/loop.py`
   - Call Synthesizer.synthesize(evidence_list)
   - Produce FinalReportContract (verified_facts + inferences)
