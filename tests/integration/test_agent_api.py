@@ -4,6 +4,43 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.routes import native_agent
+from app.platform.persistence import agent_memory_repository
+
+
+class FakeStoredObject:
+    key = "badcase.md"
+    uri = "memory://badcase.md"
+    local_path = "badcase.md"
+    size = 128
+    backend = "memory"
+
+
+class FakeObjectStorage:
+    def __init__(self):
+        self.writes: list[tuple[str, bytes]] = []
+
+    def put_bytes(self, key: str, content: bytes):
+        self.writes.append((key, content))
+        stored = FakeStoredObject()
+        stored.key = key
+        stored.uri = f"memory://{key}"
+        stored.local_path = key
+        stored.size = len(content)
+        return stored
+
+
+class FakeIndexingTaskService:
+    def submit_task(self, filename: str, file_path: str) -> str:
+        self.last_submit = {"filename": filename, "file_path": file_path}
+        return "task-badcase"
+
+
+class FakeTaskDispatcher:
+    def __init__(self):
+        self.enqueued: list[tuple[str, str]] = []
+
+    async def enqueue_indexing_task(self, task_id: str, file_path: str) -> None:
+        self.enqueued.append((task_id, file_path))
 
 
 def test_native_agent_api_creates_scene_and_runs_agent(monkeypatch):
@@ -96,6 +133,13 @@ def test_native_agent_api_merges_partial_tool_policy_updates(monkeypatch):
 
 
 def test_native_agent_api_accepts_product_feedback_ratings(monkeypatch):
+    object_storage = FakeObjectStorage()
+    indexing_service = FakeIndexingTaskService()
+    dispatcher = FakeTaskDispatcher()
+    monkeypatch.setattr(native_agent, "get_object_storage", lambda: object_storage)
+    monkeypatch.setattr(native_agent, "get_indexing_task_service", lambda: indexing_service)
+    monkeypatch.setattr(native_agent, "task_dispatcher", dispatcher)
+
     app = FastAPI()
     app.include_router(native_agent.router, prefix="/api")
     client = TestClient(app)
@@ -112,8 +156,49 @@ def test_native_agent_api_accepts_product_feedback_ratings(monkeypatch):
 
     response = client.post(
         f"/api/agent/runs/{run_id}/feedback",
-        json={"rating": "helpful", "comment": "Good evidence trail"},
+        json={
+            "rating": "wrong",
+            "comment": "The report missed the release.",
+            "correction": "Rollback fixed the incident.",
+        },
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["feedback_id"]
+    data = response.json()["data"]
+    assert data["feedback_id"]
+    assert data["badcase_flag"] is True
+    assert data["correction"] == "Rollback fixed the incident."
+    assert data["review_status"] == "pending"
+    memories = agent_memory_repository.search_memory(
+        workspace_id=workspace_id,
+        query="Rollback fixed incident",
+        limit=1,
+    )
+    assert memories[0]["conclusion_type"] == "correction"
+    assert memories[0]["conclusion_text"] == "Rollback fixed the incident."
+
+    badcases_response = client.get("/api/agent/badcases")
+    assert badcases_response.status_code == 200
+    badcase = badcases_response.json()["data"][0]
+    assert badcase["feedback_id"] == data["feedback_id"]
+    assert badcase["run"]["run_id"] == run_id
+
+    review_response = client.post(
+        f"/api/agent/badcases/{data['feedback_id']}/review",
+        json={"review_status": "confirmed", "review_note": "On-call confirmed."},
+    )
+    assert review_response.status_code == 200
+    reviewed = review_response.json()["data"]
+    assert reviewed["review_status"] == "confirmed"
+    assert reviewed["review_note"] == "On-call confirmed."
+    assert reviewed["reviewed_by"] == "local-dev"
+
+    promotion_response = client.post(f"/api/agent/badcases/{data['feedback_id']}/promote-knowledge")
+    assert promotion_response.status_code == 202
+    promotion = promotion_response.json()["data"]
+    assert promotion["badcase"]["knowledge_status"] == "queued"
+    assert promotion["badcase"]["knowledge_task_id"] == "task-badcase"
+    assert promotion["filename"].startswith("badcase-")
+    assert object_storage.writes[0][0] == promotion["filename"]
+    assert b"Rollback fixed the incident." in object_storage.writes[0][1]
+    assert dispatcher.enqueued == [("task-badcase", promotion["filename"])]

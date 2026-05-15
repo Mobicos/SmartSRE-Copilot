@@ -73,6 +73,65 @@ test.describe("Agent runtime production paths", () => {
     await expect(page.getByText("决策状态")).toBeVisible()
     await expect(page.getByText("工具轨迹")).toBeVisible()
     await expect(page.getByText("报告", { exact: true })).toBeVisible()
+
+    const secondRun = await createRun(
+      request,
+      scene.id,
+      "Use the deterministic time tool and finish again.",
+    )
+    const secondEvents = await getJson<JsonRecord[]>(
+      await request.get(`/api/agent/runs/${secondRun.run_id}/events`),
+      "second run events",
+    )
+    expect(secondEvents.some((event) => event.type === "memory_context")).toBe(true)
+
+    await page.goto(`/agent/${secondRun.run_id}`)
+    await expect(
+      page.locator('[data-slot="card-title"]').filter({ hasText: "历史记忆" }),
+    ).toBeVisible({ timeout: 20_000 })
+
+    const feedback = await getJson<JsonRecord>(
+      await request.post(`/api/agent/runs/${secondRun.run_id}/feedback`, {
+        data: {
+          rating: "wrong",
+          comment: "The report missed the prior memory.",
+          correction: "Prior memory should be cited before the final report.",
+        },
+      }),
+      "badcase feedback",
+    )
+    const feedbackId = String(feedback.feedback_id)
+    const badcases = await getJson<JsonRecord[]>(
+      await request.get("/api/agent/badcases?limit=100"),
+      "badcases",
+    )
+    expect(badcases.some((item) => item.feedback_id === feedbackId)).toBe(true)
+
+    const reviewed = await getJson<JsonRecord>(
+      await request.post(`/api/agent/badcases/${feedbackId}/review`, {
+        data: {
+          review_status: "confirmed",
+          review_note: "Confirmed by e2e.",
+        },
+      }),
+      "badcase review",
+    )
+    expect(reviewed.review_status).toBe("confirmed")
+
+    const promotion = await getJson<JsonRecord>(
+      await request.post(`/api/agent/badcases/${feedbackId}/promote-knowledge`, {
+        data: {},
+      }),
+      "badcase knowledge promotion",
+    )
+    expect(readNested(promotion, ["badcase", "knowledge_status"])).toBe("queued")
+
+    await page.goto("/agent/badcases")
+    await expect(page.getByRole("heading", { name: "Badcase" })).toBeVisible({
+      timeout: 20_000,
+    })
+    await expect(page.locator("span").filter({ hasText: /^已确认$/ }).first()).toBeVisible()
+    await expect(page.locator("span").filter({ hasText: /^queued$/ }).first()).toBeVisible()
   })
 
   test("requires approval, approves the tool call, resumes, and updates replay state", async ({

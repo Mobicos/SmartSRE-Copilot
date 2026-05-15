@@ -64,3 +64,29 @@ class ToolPolicyStore(Protocol):
 
     def get_policy(self, tool_name: str) -> dict[str, Any] | None:
         """Return a persisted policy or None when no override exists."""
+
+
+@runtime_checkable
+class AgentMemoryStore(Protocol):
+    """Persist and retrieve cross-session Agent memories."""
+
+    def search_memory(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        limit: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Return relevant memories for a new run."""
+
+    def create_memory(
+        self,
+        *,
+        workspace_id: str,
+        run_id: str | None,
+        conclusion_text: str,
+        conclusion_type: str = "final_report",
+        confidence: float = 0.5,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist one memory item and return its id."""

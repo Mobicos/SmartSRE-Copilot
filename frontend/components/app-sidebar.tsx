@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   BookOpen,
+  ClipboardCheck,
   FileText,
   History,
   MessageSquare,
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/agent", label: "诊断", icon: Stethoscope },
   { href: "/agent/history", label: "历史记录", icon: History },
   { href: "/agent/approvals", label: "审批", icon: ShieldCheck },
+  { href: "/agent/badcases", label: "Badcase", icon: ClipboardCheck },
   { href: "/agent/tools", label: "工具", icon: Wrench },
   { href: "/scenarios", label: "场景", icon: Route },
   { href: "/knowledge", label: "知识库", icon: BookOpen },

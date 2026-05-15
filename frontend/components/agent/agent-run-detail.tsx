@@ -6,6 +6,7 @@ import Link from "next/link"
 import {
   AlertTriangle,
   ArrowLeft,
+  Brain,
   CheckCircle2,
   Loader2,
   ThumbsDown,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils"
 import type {
   NativeAgentDecisionState,
   NativeAgentEvent,
+  NativeAgentMemory,
   NativeAgentReplay,
 } from "@/lib/native-agent-types"
 
@@ -47,6 +49,7 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
   const [loading, setLoading] = useState(true)
   const [feedbackRating, setFeedbackRating] = useState<string | null>(null)
   const [feedbackComment, setFeedbackComment] = useState("")
+  const [feedbackCorrection, setFeedbackCorrection] = useState("")
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
 
   useEffect(() => {
@@ -87,7 +90,11 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
       const res = await fetch(`/api/agent/runs/${runId}/feedback`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ rating, comment: feedbackComment || undefined }),
+        body: JSON.stringify({
+          rating,
+          comment: feedbackComment || undefined,
+          correction: feedbackCorrection || undefined,
+        }),
       })
       if (res.ok) {
         toast.success("反馈已提交")
@@ -151,6 +158,7 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
 
   const status = statusConfig[run.status] || statusConfig.completed
   const StatusIcon = status.icon
+  const memories = extractMemories(events)
 
   return (
     <div className="h-full overflow-y-auto scrollbar-thin">
@@ -219,6 +227,44 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
                   <Metric label="恢复次数" value={replay.summary.approval_resume_count ?? 0} />
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {memories.length > 0 && (
+          <Card className="mb-4">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Brain className="size-4 text-emerald-500" />
+                历史记忆
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {memories.slice(0, 5).map((memory, index) => (
+                <div
+                  key={memory.memory_id || `${memory.conclusion_type || "memory"}-${index}`}
+                  className="rounded-md border border-border bg-muted/20 p-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-emerald-600">
+                      {memory.conclusion_type || "memory"}
+                    </span>
+                    {typeof memory.confidence === "number" && (
+                      <span className="text-[10px] text-muted-foreground">
+                        置信度 {(memory.confidence * 100).toFixed(0)}%
+                      </span>
+                    )}
+                    {typeof memory.similarity === "number" && (
+                      <span className="text-[10px] text-muted-foreground">
+                        匹配度 {(memory.similarity * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs text-muted-foreground">
+                    {memory.conclusion_text || "n/a"}
+                  </p>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}
@@ -388,6 +434,13 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
                     disabled={submittingFeedback}
                     className="min-h-16"
                   />
+                  <Textarea
+                    placeholder="正确结论或修正建议（可选，会进入 Badcase 记忆）"
+                    value={feedbackCorrection}
+                    onChange={(e) => setFeedbackCorrection(e.target.value)}
+                    disabled={submittingFeedback}
+                    className="min-h-20"
+                  />
                 </div>
               )}
             </CardContent>
@@ -396,6 +449,29 @@ export function AgentRunDetail({ runId }: AgentRunDetailProps) {
       </div>
     </div>
   )
+}
+
+function extractMemories(events: NativeAgentEvent[]): NativeAgentMemory[] {
+  const memories: NativeAgentMemory[] = []
+  const seen = new Set<string>()
+  for (const event of events) {
+    if (event.type !== "memory_context") {
+      continue
+    }
+    const payloadMemories = event.payload?.memories
+    if (!Array.isArray(payloadMemories)) {
+      continue
+    }
+    for (const memory of payloadMemories) {
+      const key = memory.memory_id || `${memory.conclusion_type}:${memory.conclusion_text}`
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      memories.push(memory)
+    }
+  }
+  return memories
 }
 
 function Metric({

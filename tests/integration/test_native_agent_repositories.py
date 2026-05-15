@@ -10,6 +10,7 @@ from app.domains.native_agent import (
 )
 from app.platform.persistence import (
     agent_feedback_repository,
+    agent_memory_repository,
     agent_run_repository,
     knowledge_base_repository,
     scene_repository,
@@ -111,7 +112,14 @@ def test_agent_run_repository_persists_ordered_trajectory_and_feedback():
         payload={"tool": "SearchLog"},
     )
     agent_run_repository.update_run(run_id, status="completed", final_report="root cause")
-    agent_feedback_repository.create_feedback(run_id, rating="up", comment="useful")
+    agent_feedback_repository.create_feedback(
+        run_id,
+        rating="wrong",
+        comment="missed the deploy",
+        correction="Deployment regression caused the alert.",
+        badcase_flag=True,
+        original_report="root cause",
+    )
 
     run = agent_run_repository.get_run(run_id)
     events = agent_run_repository.list_events(run_id)
@@ -122,7 +130,40 @@ def test_agent_run_repository_persists_ordered_trajectory_and_feedback():
     assert run["final_report"] == "root cause"
     assert [event["type"] for event in events] == ["hypothesis", "tool_result"]
     assert events[0]["payload"] == {"hypothesis": "cpu"}
-    assert feedback[0]["rating"] == "up"
+    assert feedback[0]["rating"] == "wrong"
+    assert feedback[0]["comment"] == "missed the deploy"
+    assert feedback[0]["correction"] == "Deployment regression caused the alert."
+    assert feedback[0]["badcase_flag"] is True
+    assert feedback[0]["original_report"] == "root cause"
+    assert feedback[0]["review_status"] == "pending"
+
+    badcases = agent_feedback_repository.list_badcases(limit=10)
+    reviewed = agent_feedback_repository.review_badcase(
+        badcases[0]["feedback_id"],
+        review_status="confirmed",
+        review_note="Confirmed by on-call review.",
+        reviewed_by="pytest",
+    )
+
+    assert badcases[0]["run"]["run_id"] == run_id
+    assert badcases[0]["review_status"] == "pending"
+    assert reviewed is not None
+    assert reviewed["review_status"] == "confirmed"
+    assert reviewed["review_note"] == "Confirmed by on-call review."
+    assert reviewed["reviewed_by"] == "pytest"
+    assert reviewed["reviewed_at"] is not None
+    promoted = agent_feedback_repository.mark_badcase_knowledge_promotion(
+        badcases[0]["feedback_id"],
+        knowledge_status="queued",
+        knowledge_task_id="task-1",
+        knowledge_filename="badcase.md",
+    )
+
+    assert promoted is not None
+    assert promoted["knowledge_status"] == "queued"
+    assert promoted["knowledge_task_id"] == "task-1"
+    assert promoted["knowledge_filename"] == "badcase.md"
+    assert promoted["promoted_at"] is not None
 
     run_entity = AgentRun.from_record(run)
     event_entity = AgentEvent.from_record(events[0])
@@ -131,3 +172,34 @@ def test_agent_run_repository_persists_ordered_trajectory_and_feedback():
     assert run_entity.is_completed() is True
     assert event_entity.type == "hypothesis"
     assert event_entity.payload == {"hypothesis": "cpu"}
+
+
+def test_agent_memory_repository_persists_and_searches_workspace_memory():
+    workspace_id = workspace_repository.create_workspace(name="Memory SRE Team")
+    scene_id = scene_repository.create_scene(workspace_id, name="Memory Diagnosis")
+    run_id = agent_run_repository.create_run(
+        workspace_id=workspace_id,
+        scene_id=scene_id,
+        session_id="session-1",
+        goal="diagnose checkout latency",
+    )
+    memory_id = agent_memory_repository.create_memory(
+        workspace_id=workspace_id,
+        run_id=run_id,
+        conclusion_text="Checkout latency was caused by database connection pool exhaustion.",
+        conclusion_type="root_cause",
+        confidence=0.8,
+        metadata={"source": "test"},
+    )
+
+    memories = agent_memory_repository.search_memory(
+        workspace_id=workspace_id,
+        query="checkout latency connection pool",
+        limit=3,
+    )
+
+    assert memories[0]["memory_id"] == memory_id
+    assert memories[0]["conclusion_type"] == "root_cause"
+    assert memories[0]["confidence"] == 0.8
+    assert memories[0]["metadata"] == {"source": "test"}
+    assert memories[0]["similarity"] > 0

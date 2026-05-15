@@ -9,6 +9,7 @@ from app.agent_runtime import (
     AgentGoalContract,
     AgentHypothesis,
     AgentObservation,
+    DeterministicDecisionProvider,
     EvidenceAssessment,
     FinalReportContract,
     QwenDecisionProvider,
@@ -145,6 +146,41 @@ def test_decision_runtime_graph_nodes_update_state_and_cache_compiled_graph():
     assert result.budget.remaining_steps == 1
     assert result.budget.remaining_tool_calls == 0
     assert result.evidence[-1].quality == "weak"
+
+
+def test_decision_runtime_falls_back_when_provider_raises():
+    class FailingProvider:
+        provider_name = "qwen"
+
+        def decide(self, state):
+            raise RuntimeError("qwen unavailable")
+
+    runtime = AgentDecisionRuntime(
+        provider=FailingProvider(),
+        fallback_provider=DeterministicDecisionProvider(),
+    )
+    state = build_initial_decision_state(
+        run_id="run-1",
+        goal="Diagnose latency",
+        workspace_id="workspace-1",
+        scene_id="scene-1",
+        available_tools=["SearchLog"],
+    )
+
+    result = runtime.decide_once(state)
+    fallback_events = runtime.consume_provider_fallback_events()
+
+    assert result.decisions[-1].action_type == "call_tool"
+    assert result.decisions[-1].selected_tool == "SearchLog"
+    assert fallback_events == [
+        {
+            "from_provider": "qwen",
+            "to_provider": "deterministic",
+            "reason": "RuntimeError",
+            "error_message": "qwen unavailable",
+        }
+    ]
+    assert runtime.consume_provider_fallback_events() == []
 
 
 def test_final_report_contract_separates_facts_inferences_and_handoff():

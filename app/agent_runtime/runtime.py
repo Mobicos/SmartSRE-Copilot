@@ -8,6 +8,7 @@ policy gates, assesses evidence, and persists every step as replayable events.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ from app.agent_runtime.executor import AgentToolExecutor
 from app.agent_runtime.guardrails import sanitize_goal
 from app.agent_runtime.planner import AgentPlanner
 from app.agent_runtime.policy import ToolPolicyGate
-from app.agent_runtime.ports import AgentRunStore, SceneStore, ToolPolicyStore
+from app.agent_runtime.ports import AgentMemoryStore, AgentRunStore, SceneStore, ToolPolicyStore
 from app.agent_runtime.state import EvidenceItem
 from app.agent_runtime.synthesizer import ReportSynthesizer
 from app.agent_runtime.tool_catalog import ToolCatalog
@@ -192,8 +193,8 @@ class MetricsCollector:
                 error_type=_metric_error_type(run, events),
                 approval_state=_metric_approval_state(events),
                 retrieval_count=len(_events_by_type(events, "knowledge_context")),
-                token_usage=None,
-                cost_estimate=None,
+                token_usage=_metric_token_usage(run, events, self._settings),
+                cost_estimate=_metric_cost_estimate(run, events, self._settings),
                 handoff_reason=_metric_handoff_reason(run, events),
             )
         except Exception as exc:
@@ -398,6 +399,7 @@ class AgentRuntime:
         scene_store: SceneStore | None = None,
         run_store: AgentRunStore | None = None,
         policy_store: ToolPolicyStore | None = None,
+        memory_store: AgentMemoryStore | None = None,
         planner: AgentPlanner | None = None,
         policy_gate: ToolPolicyGate | None = None,
         action_executor: AgentToolExecutor | None = None,
@@ -409,6 +411,7 @@ class AgentRuntime:
         self._scene_store = _required_dependency(scene_store, "scene_store")
         self._run_store = _required_dependency(run_store, "run_store")
         self._policy_store = _required_dependency(policy_store, "policy_store")
+        self._memory_store = memory_store
         self._event_recorder = EventRecorder(self._run_store)
         self._metrics_collector = MetricsCollector(self._run_store, self._settings)
         self._tool_catalog = tool_catalog or ToolCatalog()
@@ -535,6 +538,15 @@ class AgentRuntime:
                     message=knowledge_context.summary,
                     payload=knowledge_context.to_event_payload(),
                 )
+            memories = self._search_memory(runtime_context)
+            if memories:
+                yield self._record_event(
+                    run_id,
+                    event_type="memory_context",
+                    stage="context",
+                    message=f"已检索到历史记忆 {len(memories)} 条。",
+                    payload={"memories": memories},
+                )
 
             selected_tool_names = self._planner.select_tool_names(scene)
             decision_runtime_enabled = _decision_runtime_enabled(scene)
@@ -565,6 +577,16 @@ class AgentRuntime:
                         exc=exc,
                     )
                     decision_state = self._decision_runtime.decide_once(decision_state)
+                for fallback_payload in self._decision_runtime.consume_provider_fallback_events():
+                    yield self._record_event(
+                        run_id,
+                        event_type="provider_fallback",
+                        stage="decision",
+                        message=(
+                            f"决策 Provider 不可用，已降级到 {fallback_payload.get('to_provider')}"
+                        ),
+                        payload=fallback_payload,
+                    )
                 for observation in decision_state.observations:
                     yield self._record_event(
                         run_id,
@@ -609,6 +631,7 @@ class AgentRuntime:
                     state.knowledge_context,
                 )
                 self._run_store.update_run(run_id, status="completed", final_report=final_report)
+                self._persist_run_memory(runtime_context, final_report)
                 yield self._record_event(
                     run_id,
                     event_type="final_report",
@@ -643,6 +666,7 @@ class AgentRuntime:
                     state.knowledge_context,
                 )
                 self._run_store.update_run(run_id, status="completed", final_report=final_report)
+                self._persist_run_memory(runtime_context, final_report)
                 yield self._record_event(
                     run_id,
                     event_type="final_report",
@@ -746,6 +770,13 @@ class AgentRuntime:
                             final_report=final_report,
                             error_message=reason,
                         )
+                        self._persist_run_memory(
+                            runtime_context,
+                            final_report,
+                            conclusion_type="handoff",
+                            confidence=0.3,
+                            metadata={"handoff_reason": reason},
+                        )
                         yield self._record_event(
                             run_id,
                             event_type="handoff",
@@ -819,6 +850,13 @@ class AgentRuntime:
                     final_report=final_report,
                     error_message="budget_exhausted",
                 )
+                self._persist_run_memory(
+                    runtime_context,
+                    final_report,
+                    conclusion_type="handoff",
+                    confidence=0.3,
+                    metadata={"handoff_reason": "budget_exhausted"},
+                )
                 yield self._record_event(
                     run_id,
                     event_type="handoff",
@@ -847,6 +885,7 @@ class AgentRuntime:
                 else self._synthesizer.build_report(state)
             )
             self._run_store.update_run(run_id, status="completed", final_report=final_report)
+            self._persist_run_memory(runtime_context, final_report)
             yield self._record_event(
                 run_id,
                 event_type="final_report",
@@ -952,6 +991,50 @@ class AgentRuntime:
 
     def _persist_run_metrics(self, run_id: str) -> None:
         self._metrics_collector.persist(run_id)
+
+    def _search_memory(self, context: RuntimeContext) -> list[dict[str, Any]]:
+        if self._memory_store is None:
+            return []
+        try:
+            return self._memory_store.search_memory(
+                workspace_id=context.workspace_id,
+                query=context.goal,
+                limit=3,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to search agent memory for run {run_id}: {exc}",
+                run_id=context.run_id,
+                exc=exc,
+            )
+            return []
+
+    def _persist_run_memory(
+        self,
+        context: RuntimeContext,
+        final_report: str,
+        *,
+        conclusion_type: str = "final_report",
+        confidence: float = 0.6,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if self._memory_store is None or not final_report.strip():
+            return
+        try:
+            self._memory_store.create_memory(
+                workspace_id=context.workspace_id,
+                run_id=context.run_id,
+                conclusion_text=_memory_excerpt(final_report),
+                conclusion_type=conclusion_type,
+                confidence=confidence,
+                metadata={"source": "agent_run", **(metadata or {})},
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to persist agent memory for run {run_id}: {exc}",
+                run_id=context.run_id,
+                exc=exc,
+            )
 
 
 def _positive_int(value: Any, *, default: int) -> int:
@@ -1107,6 +1190,13 @@ def _events_by_type(events: list[dict[str, Any]], event_type: str) -> list[dict[
     return [event for event in events if event.get("type") == event_type]
 
 
+def _memory_excerpt(text: str, *, limit: int = 2000) -> str:
+    normalized = text.strip()
+    if len(normalized) <= limit:
+        return normalized
+    return f"{normalized[: limit - 3].rstrip()}..."
+
+
 def _metric_step_count(events: list[dict[str, Any]]) -> int:
     step_events = {"hypothesis", "decision", "tool_call", "tool_result"}
     return len([event for event in events if event.get("type") in step_events])
@@ -1150,6 +1240,100 @@ def _metric_handoff_reason(run: dict[str, Any], events: list[dict[str, Any]]) ->
         error_message = run.get("error_message")
         return str(error_message) if error_message else "handoff_required"
     return None
+
+
+def _metric_token_usage(
+    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
+) -> dict[str, Any]:
+    """Estimate token usage from persisted runtime artifacts.
+
+    Deterministic runs do not receive provider token accounting, so this keeps
+    AgentOps fields attributable without pretending to be vendor billing data.
+    """
+
+    prompt_sources: list[Any] = [
+        run.get("goal"),
+        run.get("session_id"),
+        [
+            event.get("payload")
+            for event in events
+            if event.get("type") in {"run_started", "hypothesis", "observation", "tool_call"}
+        ],
+    ]
+    completion_sources: list[Any] = [
+        run.get("final_report"),
+        [
+            {
+                "message": event.get("message"),
+                "payload": event.get("payload"),
+            }
+            for event in events
+            if event.get("type")
+            in {"decision", "evidence_assessment", "recovery", "handoff", "final_report"}
+        ],
+    ]
+    tool_output_sources: list[Any] = [
+        event.get("payload") for event in events if event.get("type") == "tool_result"
+    ]
+
+    prompt_tokens = _estimate_tokens(prompt_sources)
+    completion_tokens = _estimate_tokens(completion_sources)
+    tool_output_tokens = _estimate_tokens(tool_output_sources)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "tool_output_tokens": tool_output_tokens,
+        "total": prompt_tokens + completion_tokens + tool_output_tokens,
+        "model": _runtime_model_name(settings),
+        "source": "heuristic",
+    }
+
+
+def _metric_cost_estimate(
+    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
+) -> dict[str, Any]:
+    token_usage = _metric_token_usage(run, events, settings)
+    tool_call_count = len(_events_by_type(events, "tool_call"))
+    retrieval_count = len(_events_by_type(events, "knowledge_context"))
+    return {
+        "currency": "USD",
+        "total_cost": _estimate_agentops_cost(
+            token_usage=token_usage,
+            tool_call_count=tool_call_count,
+            retrieval_count=retrieval_count,
+        ),
+        "model": _runtime_model_name(settings),
+        "source": "heuristic",
+        "components": {
+            "tokens": token_usage["total"],
+            "tool_calls": tool_call_count,
+            "retrievals": retrieval_count,
+        },
+    }
+
+
+def _estimate_tokens(value: Any) -> int:
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except TypeError:
+        encoded = str(value)
+    compact = encoded.strip()
+    if not compact or compact in {"null", "[]", "{}"}:
+        return 0
+    return max(1, (len(compact) + 3) // 4)
+
+
+def _estimate_agentops_cost(
+    *,
+    token_usage: dict[str, Any],
+    tool_call_count: int,
+    retrieval_count: int,
+) -> float:
+    token_total = int(token_usage.get("total") or 0)
+    token_cost = token_total * 0.000002
+    tool_cost = tool_call_count * 0.01
+    retrieval_cost = retrieval_count * 0.002
+    return round(token_cost + tool_cost + retrieval_cost, 6)
 
 
 def _latency_ms(created_at: Any, updated_at: Any) -> int | None:
