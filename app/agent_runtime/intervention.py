@@ -11,19 +11,17 @@ from __future__ import annotations
 import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from app.agent_runtime.decision import (
     AgentDecision,
     AgentDecisionState,
-    AgentGoalContract,
     AgentObservation,
-    EvidenceAssessment,
 )
 
 
-class InterventionType(str, Enum):
+class InterventionType(StrEnum):
     INJECT_EVIDENCE = "inject_evidence"
     REPLACE_TOOL_CALL = "replace_tool_call"
     MODIFY_GOAL = "modify_goal"
