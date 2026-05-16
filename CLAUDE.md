@@ -58,16 +58,25 @@ Core flow:
 ```text
 AgentRuntime (runtime.py)
   -> AgentOrchestrator
-    -> AgentDecisionRuntime (decision.py) -- LangGraph StateGraph
+    -> BoundedReActLoop (loop.py) -- observe→decide→act→assess cycle
       -> DecisionProvider (DeterministicDecisionProvider or QwenDecisionProvider)
+      -> InterventionBridge (intervention.py) -- human intervention injection
+      -> MemoryRetriever (memory_retriever.py) -- cross-session context
     -> ToolExecutor (tool_executor.py) -- policy-gated tool calls
     -> EvidenceAssessment -- validates tool results
     -> Synthesizer (synthesizer.py) -- builds final report
+    -> MemoryExtractor (memory_extractor.py) -- persists conclusions for future runs
 ```
 
-The decision graph is currently **single-pass** (evaluate_evidence -> END).
-The config key `agent_decision_provider` switches between `"deterministic"`
-(no LLM) and `"qwen"` (LLM-backed via DashScope).
+The bounded ReAct loop enforces step, time, and token budgets. The config key
+`agent_decision_provider` switches between `"deterministic"` (no LLM) and
+`"qwen"` (LLM-backed via DashScope).
+
+**Phase 6–10 subsystems** (all in `app/agent_runtime/`):
+- `proactive.py` — `ProactiveMonitor` with `AlertDeduplicator` and `AutoDiagnosisTrigger`
+- `memory_retriever.py` / `memory_extractor.py` — pgvector-backed cross-session memory
+- `intervention.py` — `InterventionBridge` for inject_evidence, replace_tool_call, modify_goal
+- `events.py` — `AgentRuntimeEvent` with `proactive_alert` and `human_handoff` types
 
 ### MCP Tool Servers
 
