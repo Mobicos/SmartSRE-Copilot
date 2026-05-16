@@ -614,3 +614,112 @@ async def create_agent_feedback(
             "data": feedback,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# FAQ Candidate workflow
+# ---------------------------------------------------------------------------
+
+
+class FaqCandidateConfirmRequest(BaseModel):
+    feedback_ids: list[str] = Field(min_length=1)
+
+
+@router.get("/agent/faq-candidates")
+async def list_faq_candidates(
+    min_cluster_size: int = 5,
+    similarity_threshold: float = 0.5,
+    _principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    candidates = native_agent_service.list_faq_candidates(
+        min_cluster_size=min_cluster_size,
+        similarity_threshold=similarity_threshold,
+    )
+    return json_response(
+        status_code=200,
+        content={"code": 200, "message": "success", "data": candidates},
+    )
+
+
+@router.post("/agent/faq-candidates/confirm")
+async def confirm_faq_candidate(
+    request: FaqCandidateConfirmRequest,
+    principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+):
+    result = native_agent_service.confirm_faq_candidate(
+        feedback_ids=request.feedback_ids,
+        reviewed_by=principal.subject,
+    )
+    return json_response(
+        status_code=200,
+        content={"code": 200, "message": "success", "data": result},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Proactive monitor probe
+# ---------------------------------------------------------------------------
+
+
+class ProbeRequest(BaseModel):
+    services: list[str] = Field(default_factory=lambda: ["default"])
+
+
+@router.post("/agent/monitor/probe")
+async def probe_monitor(
+    request: ProbeRequest,
+    _principal: Principal = Depends(require_capability("aiops:run")),
+):
+    from app.agent_runtime.events import proactive_alert_event
+    from app.agent_runtime.proactive import (
+        AlertDeduplicator,
+        DegradedMetricProvider,
+        InMemoryAlertStore,
+        ProactiveMonitor,
+    )
+
+    store = InMemoryAlertStore()
+    dedup = AlertDeduplicator(store=store, suppress_interval_seconds=0)
+    monitor = ProactiveMonitor(
+        metric_provider=DegradedMetricProvider(),
+        deduplicator=dedup,
+        services=request.services,
+    )
+    result = monitor.probe()
+
+    events = [
+        proactive_alert_event(
+            run_id=result.run_id or "proactive",
+            service_name=alert.service_name,
+            metric_type=alert.metric_type,
+            severity=alert.severity,
+            message=alert.message,
+            run_id_diagnosis=result.run_id,
+            alert_key=alert.alert_key,
+        ).to_dict()
+        for alert in result.alerts_emitted
+    ]
+
+    return json_response(
+        status_code=200,
+        content={
+            "code": 200,
+            "message": "success",
+            "data": {
+                "services_polled": result.services_polled,
+                "anomalies_count": len(result.anomalies),
+                "alerts_count": len(result.alerts_emitted),
+                "alerts_suppressed": result.alerts_suppressed,
+                "diagnosis_triggered": result.diagnosis_triggered,
+                "diagnosis_run_id": result.run_id,
+                "degraded": result.degraded,
+                "events": events,
+            },
+        },
+    )
