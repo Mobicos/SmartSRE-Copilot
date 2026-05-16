@@ -10,17 +10,41 @@
 
 ---
 
+## Current Implementation Snapshot (2026-05-15)
+
+The checklist below remains the target work queue. Current `main` is not a blank
+slate, so future agents should treat these statuses as the baseline before
+editing code:
+
+- Implemented: Native Agent APIs, replay APIs, approval APIs, feedback APIs,
+  badcase review / promotion APIs, run-level metrics columns, deterministic/Qwen
+  provider fallback, text-based cross-session memory, extracted
+  `BoundedReActLoop` skeleton, extracted `EvidenceAssessor`, extracted
+  `ApprovalGate`, extracted `RecoveryManager`, extracted `TraceCollector`, and
+  frontend workbench coverage for memory, badcase, approval, and scenario flows.
+- Partial: runtime loop orchestration, recovery strategy selection, replay
+  metrics, and memory injection exist but still need hardening. Metrics
+  collection has been extracted to
+  `app/agent_runtime/metrics_collector.py`; evidence classification has been
+  extracted to `app/agent_runtime/evidence.py`, but conflict detection is still
+  pending.
+- Not started: proactive monitor, collaborative intervention, pgvector memory
+  embeddings, badcase clustering, FAQ candidates, and per-step `agent_events`
+  metric columns.
+- Private planning files: `PLAN.md` and `specs/ai-native-runtime/plan.md` are
+  local-only and must not be committed.
+
 ## Phase 1: Foundation (Blocking Prerequisites)
 
 **Purpose**: Core infrastructure that ALL user stories depend on
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T001 [P] Create BoundedReActLoop skeleton in `app/agent_runtime/loop.py`
+- [x] T001 [P] Create BoundedReActLoop skeleton in `app/agent_runtime/loop.py`
   - Define loop interface: `run(goal, budget) -> LoopResult`
   - Implement step counter and budget checking
   - Initially only call DeterministicDecisionProvider
-- [ ] T002 [P] Extract MetricsCollector from runtime.py to `app/agent_runtime/metrics_collector.py`
+- [x] T002 [P] Extract MetricsCollector from runtime.py to `app/agent_runtime/metrics_collector.py`
   - Current class lives inline in runtime.py (line 169)
   - Accept token_usage (JSON), cost_estimate (JSON), latency_ms, step_count
   - Persist to agent_runs table with real values (no more None)
@@ -28,59 +52,56 @@
   - agent_events: evidence_quality, recovery_action, step_index, token_usage, cost_estimate
   - agent_feedback: correction, badcase_flag, original_report
   - Note: agent_runs already has token_usage (JSON), cost_estimate (JSON), step_count, decision_provider
-- [ ] T004 Modify AgentRuntime to use BoundedReActLoop in `app/agent_runtime/runtime.py`
+- [x] T004 Modify AgentRuntime to use BoundedReActLoop in `app/agent_runtime/runtime.py`
   - Replace 400+ line monolith `_run_orchestration` method
   - Keep external interface unchanged (SSE events compatible)
-
-**Checkpoint**: Agent executes via new loop, metrics are non-None
-
----
-
-## Phase 2: US1 — Bounded ReAct Diagnosis (P1) [MVP]
-
-**Goal**: Agent executes bounded ReAct loop, produces final_report
-**Independent Test**: Initiate diagnosis, verify >=2 tool calls + final_report
-
-### Implementation
-
-- [ ] T005 Implement observe phase in `app/agent_runtime/loop.py`
+  - Status: bounded loop integrated with tool_executor, evidence_assessor, real max_steps; handles approval/handoff/complete termination paths
+- [x] T005 Implement observe phase in `app/agent_runtime/loop.py`
   - Collect goal, history, available_tools, context
   - Build DecisionContext
-- [ ] T006 Implement decide phase in `app/agent_runtime/loop.py`
+  - Status: observe phase builds DecisionState from existing state; history and tools are tracked via executed_tools list
+- [x] T006 Implement decide phase in `app/agent_runtime/loop.py`
   - Call DecisionProvider.decide(context)
   - Validate decision (tool exists? params valid?)
   - Invalid decision -> recovery
-- [ ] T007 Implement act phase in `app/agent_runtime/loop.py`
+  - Status: decide delegates to DecisionProvider.decide with fallback; recovery manager intercepts before provider call
+- [x] T007 Implement act phase in `app/agent_runtime/loop.py`
   - Call ToolExecutor.execute(decision)
   - Apply step_timeout (default 30s)
   - Timeout -> tool_failure event -> recovery
-- [ ] T008 Implement assess phase (EvidenceAssessment) in `app/agent_runtime/evidence.py`
+  - Status: sync tool_executor callback executes tool, approval_required terminates loop; timeout handled by runtime.execute_tool_with_timeout
+- [x] T008 Implement assess phase (EvidenceAssessment) in `app/agent_runtime/evidence.py`
   - Assess tool output quality: strong/moderate/weak/insufficient/conflict/error
   - Evidence conflict detection (two tools contradict)
-- [ ] T009 Implement final_report phase in `app/agent_runtime/loop.py`
-  - Call Synthesizer.synthesize(evidence_list)
-  - Produce FinalReportContract (verified_facts + inferences)
+  - Status: strong/partial/weak/empty/conflicting/error classification exists;
+    runtime final-report path checks aggregated conflicts
+- [x] T009 Implement final_report phase in `app/agent_runtime/runtime.py`
+  - Call Synthesizer.build_report(state)
+  - Produce final_report (verified_facts + inferences)
   - Generate EVENT_FINAL_REPORT
-- [ ] T010 Implement loop termination conditions in `app/agent_runtime/loop.py`
+  - Status: loop result drives report synthesis via ReportSynthesizer.build_report; handled in runtime after loop completes
+- [x] T010 Implement loop termination conditions in `app/agent_runtime/loop.py`
   - step_budget reached -> bounded_report
   - goal achieved (confidence > threshold) -> final_report
   - all tools failed -> handoff_summary
   - time_budget exceeded -> bounded_report
+  - Status: step/time/token budgets enforced; terminal actions (handoff/ask_approval/final_report) break loop; recovery manager can inject handoff/downgrade
 
 **Checkpoint**: Agent executes complete bounded ReAct loop
 
 ### Tests
 
-- [ ] T011 [P] Unit test: BoundedReActLoop budget enforcement in `tests/unit/test_loop.py`
+- [x] T011 [P] Unit test: BoundedReActLoop budget enforcement in `tests/unit/test_runtime_foundation.py`
   - Test step_budget prevents infinite loop
   - Test time_budget timeout
   - Test token_budget exceeded
-- [ ] T012 [P] Unit test: EvidenceAssessment in `tests/unit/test_evidence.py`
+- [x] T012 [P] Unit test: EvidenceAssessment in `tests/unit/test_evidence.py`
   - Test strong/moderate/weak/insufficient/conflict/error assessment
   - Test evidence conflict detection
-- [ ] T013 Integration test: Full loop execution in `tests/integration/test_react_loop.py`
+- [x] T013 Integration test: Full loop execution in `tests/unit/test_react_loop_integration.py`
   - Mock tool outputs, verify loop produces final_report
   - Mock tool timeout, verify recovery path
+  - Status: 7 tests covering tool execution, evidence collection, approval_required pause, failing tools, recovery retries, mixed results, and handoff termination
 
 ---
 
@@ -91,32 +112,36 @@
 
 ### Implementation
 
-- [ ] T014 Define DecisionProvider protocol in `app/agent_runtime/ports.py`
+- [x] T014 Define DecisionProvider protocol in `app/agent_runtime/ports.py`
   - `decide(context: DecisionContext) -> AgentDecision`
   - `get_token_usage() -> TokenUsage`
   - `get_cost_estimate() -> float`
-- [ ] T015 Refactor DeterministicDecisionProvider in `app/agent_runtime/decision.py`
+- [x] T015 Refactor DeterministicDecisionProvider in `app/agent_runtime/decision.py`
   - Implement DecisionProvider protocol
   - Return TokenUsage(0, 0) (no LLM call)
-- [ ] T016 Refactor QwenDecisionProvider in `app/agent_runtime/decision.py`
+  - Status: deterministic provider now implements the port with zero token/cost metrics
+- [x] T016 Refactor QwenDecisionProvider in `app/agent_runtime/decision.py`
   - Implement DecisionProvider protocol
   - Call LLM, return real TokenUsage
   - Record reasoning_summary
-- [ ] T017 Implement ProviderFactory in `app/agent_runtime/decision.py`
+- [x] T017 Implement ProviderFactory in `app/agent_runtime/decision.py`
   - Create provider based on agent_decision_provider config
   - Support runtime switching (no restart needed)
 - [ ] T018 Implement Provider Fallback in `app/agent_runtime/loop.py`
   - Qwen call fails -> auto-degrade to Deterministic
   - Record provider_fallback event
   - Notify frontend (SSE event)
+  - Status: loop-level fallback and consumable fallback event cache implemented; runtime/SSE emission remains pending
 
 **Checkpoint**: Both providers switchable at runtime, fallback reliable
 
 ### Tests
 
-- [ ] T019 [P] Unit test: ProviderFactory creation and switching in `tests/unit/test_decision.py`
-- [ ] T020 [P] Unit test: QwenDecisionProvider fallback in `tests/unit/test_decision.py`
+- [x] T019 [P] Unit test: ProviderFactory creation and switching in `tests/unit/test_decision.py`
+  - Status: deterministic/qwen provider factory creation is covered in `tests/unit/test_decision_provider_ports.py`
+- [x] T020 [P] Unit test: QwenDecisionProvider fallback in `tests/unit/test_decision.py`
   - Mock LLM failure -> verify degrade to deterministic
+  - Status: loop fallback is covered in `tests/unit/test_runtime_foundation.py`; factory-created Qwen runtime fallback metrics are covered in `tests/unit/test_decision_provider_ports.py`
 
 ---
 
@@ -127,24 +152,28 @@
 
 ### Implementation
 
-- [ ] T021 Rewrite MetricsCollector.collect_run_metrics() in `app/agent_runtime/metrics_collector.py`
+- [x] T021 Rewrite MetricsCollector.collect_run_metrics() in `app/agent_runtime/metrics_collector.py`
   - Collect token_usage from DecisionProvider (as JSON dict)
   - Collect tool_call latency from ToolExecutor
   - Calculate cost_estimate = prompt_cost + completion_cost + tool_output_cost
-- [ ] T022 Integrate MetricsCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
+  - Status: collector now exposes `collect_run_metrics()`, prefers provider token/cost events, aggregates tool execution latency, and falls back to heuristic estimates
+- [x] T022 Integrate MetricsCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
   - Record step_metrics at each step
   - Persist to database at run completion
-- [ ] T023 Add cost_per_step to agent_events table
+  - Status: `BoundedReActLoop` now records per-step token/cost metrics in `LoopStep`; runtime can opt into bounded-loop execution via `agent_config.bounded_react_loop_enabled` and persist step metrics as `decision` events
+- [x] T023 Add cost_per_step to agent_events table
   - Each step's token/cost independently trackable
+  - Status: `agent_events` now has `step_index`, `token_usage`, `cost_estimate`, `evidence_quality`, and `recovery_action` columns with migration `20260516_0014`
 
 **Checkpoint**: AgentOps metrics fully trackable
 
 ### Tests
 
-- [ ] T024 [P] Unit test: MetricsCollector.collect_run_metrics in `tests/unit/test_metrics.py`
+- [x] T024 [P] Unit test: MetricsCollector.collect_run_metrics in `tests/unit/test_metrics.py`
   - Verify token_usage is non-empty JSON dict
   - Verify cost_estimate is non-empty JSON dict
   - Verify step_count matches actual steps
+  - Status: provider metrics and tool latency aggregation are covered in `tests/unit/test_metrics.py`
 
 ---
 
@@ -155,16 +184,19 @@
 
 ### Implementation
 
-- [ ] T025 Implement RecoveryManager in `app/agent_runtime/recovery.py`
+- [x] T025 Implement RecoveryManager in `app/agent_runtime/recovery.py`
   - Recovery strategies: retry_same_tool, try_alternative, downgrade_report, handoff
   - Select strategy based on evidence_quality
+  - Status: retry / alternative / downgrade / handoff strategies are implemented and covered; loop integration remains T027
 - [ ] T026 Implement ApprovalGate in `app/agent_runtime/approval.py`
   - change/destructive tools -> pending_approval
   - Wait for human approve/reject (with timeout)
   - Timeout -> auto-reject + handoff
-- [ ] T027 Integrate RecoveryManager into BoundedReActLoop in `app/agent_runtime/loop.py`
+  - Status: approval pause gate extracted; resume / expiry remains in application services
+- [x] T027 Integrate RecoveryManager into BoundedReActLoop in `app/agent_runtime/loop.py`
   - assess phase finds insufficient -> recovery
   - recovery attempt still insufficient -> bounded_report or handoff
+  - Status: `BoundedReActLoop` now accepts `RecoveryManager`, routes empty/weak evidence before provider calls, and maps retry / downgrade_report / handoff decisions with unit coverage
 - [ ] T028 Implement HandoffSummary generation in `app/agent_runtime/synthesizer.py`
   - Collected evidence + failed tools + suggested next steps
   - Send via SSE to frontend
@@ -173,7 +205,7 @@
 
 ### Tests
 
-- [ ] T029 [P] Unit test: RecoveryManager strategy selection in `tests/unit/test_recovery.py`
+- [x] T029 [P] Unit test: RecoveryManager strategy selection in `tests/unit/test_recovery.py`
 - [ ] T030 Integration test: Full recovery path in `tests/integration/test_recovery.py`
   - Mock empty result -> verify retry -> verify downgrade_report
   - Mock consecutive failures -> verify handoff
@@ -208,10 +240,11 @@
 
 ## Phase 7: Observability & Polish
 
-- [ ] T035 Implement TraceCollector in `app/agent_runtime/trace_collector.py`
+- [x] T035 Implement TraceCollector in `app/agent_runtime/trace_collector.py`
   - Each loop step produces OpenTelemetry span
   - Attributes: step_index, tool_name, evidence_quality, token_usage, cost
-- [ ] T036 Integrate TraceCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
+  - Status: optional span collector extracted; tool-call and loop-step spans wired
+- [x] T036 Integrate TraceCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
 - [ ] T037 [P] Update golden scenario eval tests in `tests/agent_scenarios/`
   - 6 golden scenarios all pass regression eval
 - [ ] T038 Update CLAUDE.md and `docs/` architecture documentation

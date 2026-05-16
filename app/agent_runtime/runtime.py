@@ -8,22 +8,15 @@ policy gates, assesses evidence, and persists every step as replayable events.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator
-from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic
+from types import SimpleNamespace
 from typing import Any, cast
 
 from loguru import logger
 
-from app.agent_runtime.constants import (
-    CONFIDENCE_LOW,
-    CONFIDENCE_NONE,
-    CONFIDENCE_PARTIAL,
-    CONFIDENCE_STRONG,
-    RUNTIME_VERSION,
-)
+from app.agent_runtime.approval import ApprovalGate
 from app.agent_runtime.context import KnowledgeContextProvider
 from app.agent_runtime.decision import (
     AgentDecision,
@@ -37,15 +30,20 @@ from app.agent_runtime.decision import (
     build_initial_decision_state,
 )
 from app.agent_runtime.events import AgentRuntimeEvent
+from app.agent_runtime.evidence import EvidenceAssessor
 from app.agent_runtime.executor import AgentToolExecutor
 from app.agent_runtime.guardrails import sanitize_goal
+from app.agent_runtime.loop import BoundedReActLoop, LoopBudget, LoopStep
+from app.agent_runtime.metrics_collector import MetricsCollector
 from app.agent_runtime.planner import AgentPlanner
 from app.agent_runtime.policy import ToolPolicyGate
 from app.agent_runtime.ports import AgentMemoryStore, AgentRunStore, SceneStore, ToolPolicyStore
-from app.agent_runtime.state import EvidenceItem
+from app.agent_runtime.recovery import RecoveryManager
+from app.agent_runtime.state import AgentRunState, EvidenceItem
 from app.agent_runtime.synthesizer import ReportSynthesizer
 from app.agent_runtime.tool_catalog import ToolCatalog
 from app.agent_runtime.tool_executor import ToolExecutionResult, ToolExecutor
+from app.agent_runtime.trace_collector import TraceCollector
 from app.core.config import AppSettings
 
 
@@ -167,38 +165,43 @@ class EventRecorder:
             payload=payload,
         )
 
+    def record_loop_step(self, run_id: str, step: LoopStep) -> AgentRuntimeEvent:
+        """Persist one loop decision step with event-level AgentOps metrics."""
 
-class MetricsCollector:
-    """Derive and persist run-level metrics from stored events."""
+        payload = {
+            **step.metrics,
+            "decision": step.decision.to_event_payload(),
+        }
+        return self.record(
+            run_id,
+            event_type="decision",
+            stage="decision",
+            message=step.decision.reasoning_summary,
+            payload=payload,
+        )
 
-    def __init__(self, run_store: AgentRunStore, settings: AppSettings) -> None:
-        self._run_store = run_store
-        self._settings = settings
 
-    def persist(self, run_id: str) -> None:
-        try:
-            run = self._run_store.get_run(run_id)
-            events = self._run_store.list_events(run_id)
-            if run is None:
-                return
-            self._run_store.update_run_metrics(
-                run_id,
-                runtime_version=RUNTIME_VERSION,
-                trace_id=run_id,
-                model_name=_runtime_model_name(self._settings),
-                decision_provider=_runtime_decision_provider(self._settings),
-                step_count=_metric_step_count(events),
-                tool_call_count=len(_events_by_type(events, "tool_call")),
-                latency_ms=_latency_ms(run.get("created_at"), run.get("updated_at")),
-                error_type=_metric_error_type(run, events),
-                approval_state=_metric_approval_state(events),
-                retrieval_count=len(_events_by_type(events, "knowledge_context")),
-                token_usage=_metric_token_usage(run, events, self._settings),
-                cost_estimate=_metric_cost_estimate(run, events, self._settings),
-                handoff_reason=_metric_handoff_reason(run, events),
-            )
-        except Exception as exc:
-            logger.warning(f"Failed to persist agent run metrics for {run_id}: {exc}")
+class DecisionRuntimeProviderAdapter:
+    """Expose AgentDecisionRuntime's provider as the bounded-loop provider seam."""
+
+    provider_name = "decision_runtime"
+
+    def __init__(self, decision_runtime: AgentDecisionRuntime) -> None:
+        self._decision_runtime = decision_runtime
+
+    def decide(self, state: Any) -> AgentDecision:
+        provider = self._decision_runtime.provider
+        return provider.decide(state)
+
+    def get_token_usage(self) -> dict[str, Any]:
+        provider = self._decision_runtime.provider
+        get_token_usage = getattr(provider, "get_token_usage", None)
+        return cast(dict[str, Any], get_token_usage()) if callable(get_token_usage) else {}
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        provider = self._decision_runtime.provider
+        get_cost_estimate = getattr(provider, "get_cost_estimate", None)
+        return cast(dict[str, Any], get_cost_estimate()) if callable(get_cost_estimate) else {}
 
 
 class StepRunner:
@@ -226,151 +229,6 @@ class StepRunner:
                 deadline=deadline,
             ),
         )
-
-
-class ApprovalBoundary:
-    """Centralize approval pause semantics for the Agent runtime."""
-
-    waiting_message = "工具执行等待人工审批。"
-
-    def __init__(
-        self,
-        *,
-        run_store: AgentRunStore,
-        event_recorder: EventRecorder,
-        metrics_collector: MetricsCollector,
-    ) -> None:
-        self._run_store = run_store
-        self._event_recorder = event_recorder
-        self._metrics_collector = metrics_collector
-
-    def pause(
-        self,
-        context: RuntimeContext,
-        *,
-        tool_name: str,
-        payload: dict[str, Any],
-    ) -> list[AgentRuntimeEvent]:
-        self._run_store.update_run(
-            context.run_id,
-            status="waiting_approval",
-            final_report=self.waiting_message,
-        )
-        event = self._event_recorder.record(
-            context.run_id,
-            event_type="approval_required",
-            stage="approval",
-            message=f"工具需要审批：{tool_name}",
-            payload=payload,
-        )
-        self._metrics_collector.persist(context.run_id)
-        return [
-            event,
-            AgentRuntimeEvent(
-                type="approval_required",
-                stage="approval",
-                run_id=context.run_id,
-                status="waiting_approval",
-                message=f"工具需要审批：{tool_name}",
-            ),
-        ]
-
-
-class RuntimeFailureHandler:
-    """Translate runtime failures into persisted run state and stream events."""
-
-    def __init__(
-        self,
-        *,
-        run_store: AgentRunStore,
-        event_recorder: EventRecorder,
-        metrics_collector: MetricsCollector,
-    ) -> None:
-        self._run_store = run_store
-        self._event_recorder = event_recorder
-        self._metrics_collector = metrics_collector
-
-    def mark_cancelled(
-        self,
-        context: RuntimeContext,
-    ) -> None:
-        self._run_store.update_run(
-            context.run_id,
-            status="cancelled",
-            error_message="Agent 运行已取消",
-        )
-        self._event_recorder.record(
-            context.run_id,
-            event_type="cancelled",
-            stage="cancelled",
-            message="Agent 运行已取消",
-            payload={"runtime_safety": context.safety_config.to_dict()},
-        )
-        self._metrics_collector.persist(context.run_id)
-
-    def timeout_event(self, context: RuntimeContext, exc: TimeoutError) -> list[AgentRuntimeEvent]:
-        error_message = str(exc) or (
-            f"Agent 运行超时，已运行 {context.safety_config.run_timeout_seconds:g} 秒"
-        )
-        self._run_store.update_run(
-            context.run_id,
-            status="failed",
-            error_message=f"TimeoutError: {error_message}",
-        )
-        event = self._event_recorder.record(
-            context.run_id,
-            event_type="timeout",
-            stage="error",
-            message=f"运行超时：{error_message}",
-            payload={
-                "error_type": "TimeoutError",
-                "error_message": error_message,
-                "timeout_scope": "run",
-                "runtime_safety": context.safety_config.to_dict(),
-            },
-        )
-        self._metrics_collector.persist(context.run_id)
-        return [
-            event,
-            AgentRuntimeEvent(
-                type="timeout",
-                stage="error",
-                run_id=context.run_id,
-                status="failed",
-                message=f"TimeoutError: {error_message}",
-            ),
-        ]
-
-    def error_event(self, context: RuntimeContext, exc: Exception) -> list[AgentRuntimeEvent]:
-        error_type = type(exc).__name__
-        error_message = str(exc)
-        self._run_store.update_run(
-            context.run_id,
-            status="failed",
-            error_message=f"{error_type}: {error_message}",
-        )
-        event = self._event_recorder.record(
-            context.run_id,
-            event_type="error",
-            stage="error",
-            message=f"运行失败：{error_message}",
-            payload={
-                "error_type": error_type,
-                "error_message": error_message,
-                "runtime_safety": context.safety_config.to_dict(),
-            },
-        )
-        self._metrics_collector.persist(context.run_id)
-        return [
-            event,
-            AgentRuntimeEvent(
-                type="error",
-                stage="error",
-                run_id=context.run_id,
-                status="failed",
-                message=f"{error_type}: {error_message}",
-            ),
-        ]
 
 
 class AgentOrchestrator:
@@ -420,15 +278,17 @@ class AgentRuntime:
         self._policy_gate = policy_gate or ToolPolicyGate(policy_store=self._policy_store)
         self._action_executor = action_executor or AgentToolExecutor(tool_executor=tool_executor)
         self._synthesizer = synthesizer or ReportSynthesizer()
+        self._evidence_assessor = EvidenceAssessor()
         self._knowledge_context_provider = knowledge_context_provider or KnowledgeContextProvider()
         self._decision_runtime = decision_runtime or AgentDecisionRuntime()
+        self._trace_collector = TraceCollector()
         self._step_runner = StepRunner(self)
-        self._approval_boundary = ApprovalBoundary(
+        self._approval_boundary = ApprovalGate(
             run_store=self._run_store,
             event_recorder=self._event_recorder,
             metrics_collector=self._metrics_collector,
         )
-        self._failure_handler = RuntimeFailureHandler(
+        self._failure_handler = RecoveryManager(
             run_store=self._run_store,
             event_recorder=self._event_recorder,
             metrics_collector=self._metrics_collector,
@@ -569,14 +429,156 @@ class AgentRuntime:
                         remaining_seconds=max(deadline.remaining_seconds(), 0),
                     ),
                 )
-                try:
-                    decision_state = self._decision_runtime.run_graph_once(decision_state)
-                except Exception as exc:
-                    logger.warning(
-                        "Decision graph execution failed; falling back to direct provider: {exc}",
-                        exc=exc,
+                if _bounded_react_loop_enabled(scene):
+                    loop = BoundedReActLoop(
+                        provider=DecisionRuntimeProviderAdapter(self._decision_runtime),
+                        trace_collector=self._trace_collector,
+                        recovery_manager=self._failure_handler,
+                        tool_executor=self._make_loop_tool_executor(
+                            principal=principal,
+                            safety_config=safety_config,
+                            deadline=deadline,
+                        ),
+                        evidence_assessor=self._evidence_assessor,
                     )
-                    decision_state = self._decision_runtime.decide_once(decision_state)
+                    loop_result = loop.run(
+                        decision_state,
+                        LoopBudget(
+                            max_steps=safety_config.max_steps,
+                            max_time_seconds=max(deadline.remaining_seconds(), 0.001),
+                        ),
+                    )
+                    decision_state = loop_result.state
+                    for fallback_payload in loop.consume_provider_fallback_events():
+                        yield self._record_event(
+                            run_id,
+                            event_type="provider_fallback",
+                            stage="decision",
+                            message=(
+                                "决策 Provider 不可用，"
+                                f"已降级到 {fallback_payload.get('to_provider')}"
+                            ),
+                            payload=fallback_payload,
+                        )
+                    for step in loop_result.steps:
+                        yield self._event_recorder.record_loop_step(run_id, step)
+
+                    # --- approval_required: pause and wait ---
+                    if loop_result.termination_reason == "approval_required":
+                        last_step = loop_result.steps[-1] if loop_result.steps else None
+                        tool_name = (
+                            last_step.decision.selected_tool
+                            if last_step and last_step.decision.selected_tool
+                            else "unknown"
+                        )
+                        tool_result = last_step.tool_result if last_step else None
+                        for event in self._approval_boundary.pause(
+                            runtime_context,
+                            tool_name=tool_name,
+                            payload=(
+                                tool_result.governance_payload()
+                                if tool_result and hasattr(tool_result, "governance_payload")
+                                else {}
+                            ),
+                        ):
+                            yield event
+                        return
+
+                    # --- handoff: persist and return ---
+                    if loop_result.termination_reason == "handoff":
+                        last_decision = (
+                            decision_state.decisions[-1] if decision_state.decisions else None
+                        )
+                        reason = (
+                            (
+                                last_decision.handoff_reason
+                                or last_decision.recovery.reason
+                                or "证据不足"
+                            )
+                            if last_decision
+                            else "证据不足"
+                        )
+                        report_contract = FinalReportContract(
+                            summary="证据不足以得出安全的自主结论，因此运行交由人工处理。",
+                            verified_facts=[],
+                            inferences=["当前工具结果未提供足够的经验证证据来确认根因。"],
+                            recommendations=[
+                                "请运维人员检查引用的工具输出，收集额外证据，并在理解边界条件后恢复运行。"
+                            ],
+                            citations=[],
+                            confidence=0.3,
+                            handoff_required=True,
+                            handoff_reason=reason,
+                        )
+                        final_report = _handoff_report(goal, report_contract)
+                        self._run_store.update_run(
+                            run_id,
+                            status="handoff_required",
+                            final_report=final_report,
+                            error_message=reason,
+                        )
+                        self._persist_run_memory(
+                            runtime_context,
+                            final_report,
+                            conclusion_type="handoff",
+                            confidence=0.3,
+                            metadata={"handoff_reason": reason},
+                        )
+                        yield self._record_event(
+                            run_id,
+                            event_type="handoff",
+                            stage="handoff",
+                            message="Agent 运行需要人工交接",
+                            payload=report_contract.to_event_payload(),
+                        )
+                        self._persist_run_metrics(run_id)
+                        yield AgentRuntimeEvent(
+                            type="handoff",
+                            stage="handoff",
+                            run_id=run_id,
+                            status="handoff_required",
+                            final_report=final_report,
+                        )
+                        return
+
+                    # --- normal / final_report / max_steps: generate report ---
+                    evidence_items = list(loop_result.evidence_items)
+                    state_for_report = AgentRunState.from_goal(goal)
+                    for item in evidence_items:
+                        state_for_report.add_evidence(item)
+                    state_for_report.set_knowledge_context(
+                        self._knowledge_context_provider.build_context(scene)
+                    )
+                    final_report = ReportSynthesizer.build_report(state_for_report)
+                    self._run_store.update_run(
+                        run_id, status="completed", final_report=final_report
+                    )
+                    self._persist_run_memory(runtime_context, final_report)
+                    yield self._record_event(
+                        run_id,
+                        event_type="final_report",
+                        stage="complete",
+                        message="最终报告已生成",
+                        payload={"report": final_report},
+                    )
+                    self._persist_run_metrics(run_id)
+                    yield AgentRuntimeEvent(
+                        type="complete",
+                        stage="complete",
+                        run_id=run_id,
+                        status="completed",
+                        final_report=final_report,
+                    )
+                    return
+                else:
+                    try:
+                        decision_state = self._decision_runtime.run_graph_once(decision_state)
+                    except Exception as exc:
+                        logger.warning(
+                            "Decision graph execution failed; falling back to direct provider: {exc}",
+                            exc=exc,
+                        )
+                        decision_state = self._decision_runtime.decide_once(decision_state)
                 for fallback_payload in self._decision_runtime.consume_provider_fallback_events():
                     yield self._record_event(
                         run_id,
@@ -595,18 +597,22 @@ class AgentRuntime:
                         message=observation.summary,
                         payload=observation.model_dump(mode="json"),
                     )
-                latest_decision = decision_state.decisions[-1]
-                yield self._record_event(
-                    run_id,
-                    event_type="decision",
-                    stage="decision",
-                    message=latest_decision.reasoning_summary,
-                    payload={
-                        "checkpoint_ns": self._decision_runtime.checkpoint_ns,
-                        "decision": latest_decision.to_event_payload(),
-                        "state_status": decision_state.status,
-                    },
-                )
+                if not _bounded_react_loop_enabled(scene):
+                    latest_decision = decision_state.decisions[-1]
+                    yield self._record_event(
+                        run_id,
+                        event_type="decision",
+                        stage="decision",
+                        message=latest_decision.reasoning_summary,
+                        payload={
+                            "checkpoint_ns": self._decision_runtime.checkpoint_ns,
+                            "step_index": len(decision_state.decisions) - 1,
+                            "decision": latest_decision.to_event_payload(),
+                            "token_usage": self._decision_runtime.get_token_usage(),
+                            "cost_estimate": self._decision_runtime.get_cost_estimate(),
+                            "state_status": decision_state.status,
+                        },
+                    )
 
             selected_tool_names, skipped_tool_names = _limit_tool_steps(
                 selected_tool_names,
@@ -716,7 +722,7 @@ class AgentRuntime:
                 evidence_item = EvidenceItem.from_tool_result(result)
                 state.add_evidence(evidence_item)
                 if decision_runtime_enabled:
-                    assessment = _assess_evidence_item(evidence_item)
+                    assessment = self._evidence_assessor.assess(evidence_item)
                     yield self._record_event(
                         run_id,
                         event_type="evidence_assessment",
@@ -733,18 +739,27 @@ class AgentRuntime:
                             yield event
                         return
                     if assessment.quality in {"empty", "error", "conflicting"}:
-                        reason = _handoff_reason_from_evidence(assessment)
+                        recovery_plan = self._failure_handler.choose_strategy(
+                            evidence_quality=assessment.quality,
+                            consecutive_failures=1,
+                            tool_available=False,
+                        )
+                        reason = recovery_plan.reason or self._evidence_assessor.handoff_reason(
+                            assessment
+                        )
                         recovery = RecoveryDecision(
                             required=True,
                             reason=reason,
                             next_action="handoff",
                         )
+                        recovery_payload = recovery.model_dump(mode="json")
+                        recovery_payload["recovery_action"] = recovery_plan.action
                         yield self._record_event(
                             run_id,
                             event_type="recovery",
                             stage="recover",
                             message=f"需要恢复：{reason}",
-                            payload=recovery.model_dump(mode="json"),
+                            payload=recovery_payload,
                         )
                         report_contract = FinalReportContract(
                             summary=("证据不足以得出安全的自主结论，因此运行交由人工处理。"),
@@ -817,6 +832,67 @@ class AgentRuntime:
                 deadline.ensure_available()
 
             deadline.ensure_available()
+            if decision_runtime_enabled and len(state.evidence) > 1:
+                aggregate_assessment, aggregate_handoff_reason = _aggregate_runtime_evidence(
+                    self._evidence_assessor,
+                    state.evidence,
+                )
+                if aggregate_assessment.quality == "conflicting":
+                    recovery_plan = self._failure_handler.choose_strategy(
+                        evidence_quality=aggregate_assessment.quality,
+                        consecutive_failures=1,
+                        tool_available=False,
+                    )
+                    reason = recovery_plan.reason or aggregate_handoff_reason
+                    recovery = RecoveryDecision(
+                        required=True,
+                        reason=reason,
+                        next_action="handoff",
+                    )
+                    recovery_payload = recovery.model_dump(mode="json")
+                    recovery_payload["recovery_action"] = recovery_plan.action
+                    yield self._record_event(
+                        run_id,
+                        event_type="recovery",
+                        stage="recover",
+                        message=f"需要恢复：{reason}",
+                        payload=recovery_payload,
+                    )
+                    report_contract = _evidence_handoff_contract(
+                        assessment=aggregate_assessment,
+                        reason=reason,
+                    )
+                    final_report = _handoff_report(goal, report_contract)
+                    self._run_store.update_run(
+                        run_id,
+                        status="handoff_required",
+                        final_report=final_report,
+                        error_message=reason,
+                    )
+                    self._persist_run_memory(
+                        runtime_context,
+                        final_report,
+                        conclusion_type="handoff",
+                        confidence=0.3,
+                        metadata={"handoff_reason": reason},
+                    )
+                    yield self._record_event(
+                        run_id,
+                        event_type="handoff",
+                        stage="handoff",
+                        message="Agent 运行需要人工交接",
+                        payload=report_contract.to_event_payload(),
+                    )
+                    self._persist_run_metrics(run_id)
+                    yield AgentRuntimeEvent(
+                        type="handoff",
+                        stage="handoff",
+                        run_id=run_id,
+                        status="handoff_required",
+                        final_report=final_report,
+                    )
+                    return
+
             if decision_runtime_enabled and skipped_tool_names and not strong_evidence_found:
                 recovery = RecoveryDecision(
                     required=True,
@@ -944,8 +1020,9 @@ class AgentRuntime:
             raise TimeoutError(f"Agent run timed out after {deadline.timeout_seconds:g} seconds")
 
         timeout_seconds = min(safety_config.tool_timeout_seconds, remaining_seconds)
+        started_at = monotonic()
         try:
-            with _optional_span(
+            with self._trace_collector.span(
                 "agent.tool_call",
                 {
                     "agent.tool_name": str(action.tool_name),
@@ -953,7 +1030,7 @@ class AgentRuntime:
                     "agent.tool_timeout_seconds": timeout_seconds,
                 },
             ):
-                return await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     self._action_executor.execute(
                         tool,
                         action,
@@ -961,7 +1038,10 @@ class AgentRuntime:
                     ),
                     timeout=timeout_seconds,
                 )
+                latency_ms = _elapsed_ms(started_at)
+                return _result_with_latency(result, latency_ms)
         except TimeoutError:
+            latency_ms = _elapsed_ms(started_at)
             return ToolExecutionResult(
                 tool_name=action.tool_name,
                 status="timeout",
@@ -970,7 +1050,75 @@ class AgentRuntime:
                 policy=action.policy_snapshot.to_dict(),
                 decision="timeout",
                 decision_reason=f"工具执行超时：{timeout_seconds:g} 秒",
+                latency_ms=latency_ms,
             )
+
+    def _make_loop_tool_executor(
+        self,
+        *,
+        principal: Any,
+        safety_config: RuntimeSafetyConfig,
+        deadline: RuntimeDeadline,
+    ) -> Any:
+        """Return a sync callback that executes a tool from the bounded loop.
+
+        The callback bridges the sync loop.run() to the async tool execution
+        path via a background thread with its own event loop.
+        """
+        import concurrent.futures
+
+        runtime = self
+        _pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        def _exec(decision: Any) -> Any:
+            tool_name = getattr(decision, "selected_tool", None)
+            if not tool_name:
+                return ToolExecutionResult(
+                    tool_name="unknown",
+                    status="error",
+                    arguments={},
+                    error="决策未选择工具",
+                    policy={},
+                    decision="error",
+                    decision_reason="未选择工具",
+                )
+            tools = _pool.submit(
+                asyncio.run,
+                runtime._tool_catalog.get_tools("diagnosis"),
+            ).result()
+            tool_by_name = {str(getattr(t, "name", "")): t for t in tools}
+            tool = tool_by_name.get(tool_name)
+            if tool is None:
+                return ToolExecutionResult(
+                    tool_name=tool_name,
+                    status="error",
+                    arguments=getattr(decision, "tool_arguments", {}),
+                    error=f"工具 {tool_name} 不在可用列表中",
+                    policy={},
+                    decision="denied",
+                    decision_reason=f"工具 {tool_name} 不可用",
+                )
+            action = runtime._policy_gate.create_action(
+                tool_name,
+                goal=getattr(decision, "reasoning_summary", ""),
+            )
+            if getattr(decision, "tool_arguments", None):
+                from dataclasses import replace as _dc_replace
+
+                action = _dc_replace(action, arguments=decision.tool_arguments)
+            result = _pool.submit(
+                asyncio.run,
+                runtime.execute_tool_with_timeout(
+                    tool,
+                    action,
+                    principal=principal,
+                    safety_config=safety_config,
+                    deadline=deadline,
+                ),
+            ).result()
+            return result
+
+        return _exec
 
     def _record_event(
         self,
@@ -1062,6 +1210,26 @@ def _positive_float(value: Any, *, default: float) -> float:
     return parsed if parsed > 0 else default
 
 
+def _elapsed_ms(started_at: float) -> int:
+    return max(int((monotonic() - started_at) * 1000), 0)
+
+
+def _result_with_latency(result: Any, latency_ms: int) -> Any:
+    if isinstance(result, ToolExecutionResult):
+        return result if result.latency_ms is not None else replace(result, latency_ms=latency_ms)
+    if hasattr(result, "__dict__"):
+        result.latency_ms = latency_ms
+        return result
+    return SimpleNamespace(
+        tool_name=str(getattr(result, "tool_name", "")),
+        status=str(getattr(result, "status", "unknown")),
+        arguments=getattr(result, "arguments", {}),
+        output=getattr(result, "output", result),
+        error=getattr(result, "error", None),
+        latency_ms=latency_ms,
+    )
+
+
 def _stop_condition_from_payload(payload: dict[str, Any] | None) -> StopCondition | None:
     if not payload:
         return None
@@ -1093,66 +1261,11 @@ def _decision_runtime_enabled(scene: dict[str, Any]) -> bool:
     return value if value is not None else True
 
 
-def _runtime_model_name(settings: AppSettings) -> str:
-    provider = settings.agent_decision_provider.strip().lower()
-    if provider == "qwen":
-        return settings.dashscope_model
-    return "deterministic-native-agent"
-
-
-def _runtime_decision_provider(settings: AppSettings) -> str:
-    provider = settings.agent_decision_provider.strip().lower()
-    return provider or "deterministic"
-
-
-def _assess_evidence_item(evidence: EvidenceItem) -> EvidenceAssessment:
-    citation = {
-        "source": "tool",
-        "tool_name": evidence.tool_name,
-        "status": evidence.status,
-    }
-    if evidence.status in {"timeout", "disabled", "forbidden"} or evidence.error:
-        return EvidenceAssessment(
-            quality="error",
-            summary=f"{evidence.tool_name} 返回 {evidence.status}：{evidence.error or '无详情'}",
-            citations=[citation],
-            confidence=CONFIDENCE_NONE,
-        )
-    if evidence.status == "approval_required":
-        return EvidenceAssessment(
-            quality="partial",
-            summary=f"{evidence.tool_name} 需要审批才能采集证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_LOW,
-        )
-    if evidence.status == "partial":
-        return EvidenceAssessment(
-            quality="partial",
-            summary=f"{evidence.tool_name} 返回了部分证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_PARTIAL,
-        )
-    if evidence.output in {None, ""}:
-        return EvidenceAssessment(
-            quality="empty",
-            summary=f"{evidence.tool_name} 未返回可用证据。",
-            citations=[citation],
-            confidence=CONFIDENCE_NONE,
-        )
-    return EvidenceAssessment(
-        quality="strong",
-        summary=f"{evidence.tool_name} 返回了可用证据。",
-        citations=[citation],
-        confidence=CONFIDENCE_STRONG,
-    )
-
-
-def _handoff_reason_from_evidence(assessment: EvidenceAssessment) -> str:
-    if assessment.quality == "empty":
-        return "insufficient_evidence"
-    if assessment.quality == "conflicting":
-        return "conflicting_evidence"
-    return "evidence_error"
+def _bounded_react_loop_enabled(scene: dict[str, Any]) -> bool:
+    agent_config = scene.get("agent_config")
+    if not isinstance(agent_config, dict):
+        return False
+    return bool(agent_config.get("bounded_react_loop_enabled"))
 
 
 def _handoff_report(goal: str, report: FinalReportContract) -> str:
@@ -1171,23 +1284,33 @@ def _handoff_report(goal: str, report: FinalReportContract) -> str:
     return "\n".join(lines)
 
 
-@contextmanager
-def _optional_span(name: str, attributes: dict[str, Any]):
-    try:
-        from opentelemetry import trace
-    except Exception:
-        with nullcontext():
-            yield
-        return
-
-    with trace.get_tracer("smartsre.agent_runtime").start_as_current_span(name) as span:
-        for key, value in attributes.items():
-            span.set_attribute(key, value)
-        yield
+def _aggregate_runtime_evidence(
+    assessor: EvidenceAssessor,
+    evidence_items: list[EvidenceItem],
+) -> tuple[EvidenceAssessment, str]:
+    assessment = assessor.assess_many(evidence_items)
+    return assessment, assessor.handoff_reason(assessment)
 
 
-def _events_by_type(events: list[dict[str, Any]], event_type: str) -> list[dict[str, Any]]:
-    return [event for event in events if event.get("type") == event_type]
+def _evidence_handoff_contract(
+    *,
+    assessment: EvidenceAssessment,
+    reason: str,
+) -> FinalReportContract:
+    return FinalReportContract(
+        summary="证据存在冲突或不足以得出安全的自主结论，因此运行交由人工处理。",
+        verified_facts=[],
+        inferences=[
+            "当前工具结果未提供一致的经验证据来确认根因。",
+        ],
+        recommendations=[
+            "请运维人员检查引用的工具输出，补充验证证据后再恢复运行。",
+        ],
+        citations=assessment.citations,
+        confidence=assessment.confidence,
+        handoff_required=True,
+        handoff_reason=reason,
+    )
 
 
 def _memory_excerpt(text: str, *, limit: int = 2000) -> str:
@@ -1195,151 +1318,3 @@ def _memory_excerpt(text: str, *, limit: int = 2000) -> str:
     if len(normalized) <= limit:
         return normalized
     return f"{normalized[: limit - 3].rstrip()}..."
-
-
-def _metric_step_count(events: list[dict[str, Any]]) -> int:
-    step_events = {"hypothesis", "decision", "tool_call", "tool_result"}
-    return len([event for event in events if event.get("type") in step_events])
-
-
-def _metric_approval_state(events: list[dict[str, Any]]) -> str:
-    for event in events:
-        payload = event.get("payload")
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("approval_state") == "required":
-            return "required"
-        if payload.get("execution_status") == "approval_required":
-            return "required"
-    return "not_required"
-
-
-def _metric_error_type(run: dict[str, Any], events: list[dict[str, Any]]) -> str | None:
-    for event in reversed(events):
-        if event.get("type") not in {"timeout", "error"}:
-            continue
-        payload = event.get("payload")
-        if isinstance(payload, dict) and payload.get("error_type"):
-            return str(payload["error_type"])
-    error_message = run.get("error_message")
-    if isinstance(error_message, str) and ":" in error_message:
-        return error_message.split(":", 1)[0]
-    return None
-
-
-def _metric_handoff_reason(run: dict[str, Any], events: list[dict[str, Any]]) -> str | None:
-    for event in reversed(events):
-        if event.get("type") not in {"handoff", "recovery"}:
-            continue
-        payload = event.get("payload")
-        if isinstance(payload, dict) and payload.get("handoff_reason"):
-            return str(payload["handoff_reason"])
-        if isinstance(payload, dict) and payload.get("reason"):
-            return str(payload["reason"])
-    if run.get("status") == "handoff_required":
-        error_message = run.get("error_message")
-        return str(error_message) if error_message else "handoff_required"
-    return None
-
-
-def _metric_token_usage(
-    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
-) -> dict[str, Any]:
-    """Estimate token usage from persisted runtime artifacts.
-
-    Deterministic runs do not receive provider token accounting, so this keeps
-    AgentOps fields attributable without pretending to be vendor billing data.
-    """
-
-    prompt_sources: list[Any] = [
-        run.get("goal"),
-        run.get("session_id"),
-        [
-            event.get("payload")
-            for event in events
-            if event.get("type") in {"run_started", "hypothesis", "observation", "tool_call"}
-        ],
-    ]
-    completion_sources: list[Any] = [
-        run.get("final_report"),
-        [
-            {
-                "message": event.get("message"),
-                "payload": event.get("payload"),
-            }
-            for event in events
-            if event.get("type")
-            in {"decision", "evidence_assessment", "recovery", "handoff", "final_report"}
-        ],
-    ]
-    tool_output_sources: list[Any] = [
-        event.get("payload") for event in events if event.get("type") == "tool_result"
-    ]
-
-    prompt_tokens = _estimate_tokens(prompt_sources)
-    completion_tokens = _estimate_tokens(completion_sources)
-    tool_output_tokens = _estimate_tokens(tool_output_sources)
-    return {
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "tool_output_tokens": tool_output_tokens,
-        "total": prompt_tokens + completion_tokens + tool_output_tokens,
-        "model": _runtime_model_name(settings),
-        "source": "heuristic",
-    }
-
-
-def _metric_cost_estimate(
-    run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
-) -> dict[str, Any]:
-    token_usage = _metric_token_usage(run, events, settings)
-    tool_call_count = len(_events_by_type(events, "tool_call"))
-    retrieval_count = len(_events_by_type(events, "knowledge_context"))
-    return {
-        "currency": "USD",
-        "total_cost": _estimate_agentops_cost(
-            token_usage=token_usage,
-            tool_call_count=tool_call_count,
-            retrieval_count=retrieval_count,
-        ),
-        "model": _runtime_model_name(settings),
-        "source": "heuristic",
-        "components": {
-            "tokens": token_usage["total"],
-            "tool_calls": tool_call_count,
-            "retrievals": retrieval_count,
-        },
-    }
-
-
-def _estimate_tokens(value: Any) -> int:
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
-    except TypeError:
-        encoded = str(value)
-    compact = encoded.strip()
-    if not compact or compact in {"null", "[]", "{}"}:
-        return 0
-    return max(1, (len(compact) + 3) // 4)
-
-
-def _estimate_agentops_cost(
-    *,
-    token_usage: dict[str, Any],
-    tool_call_count: int,
-    retrieval_count: int,
-) -> float:
-    token_total = int(token_usage.get("total") or 0)
-    token_cost = token_total * 0.000002
-    tool_cost = tool_call_count * 0.01
-    retrieval_cost = retrieval_count * 0.002
-    return round(token_cost + tool_cost + retrieval_cost, 6)
-
-
-def _latency_ms(created_at: Any, updated_at: Any) -> int | None:
-    if created_at is None or updated_at is None:
-        return None
-    try:
-        return int((updated_at - created_at).total_seconds() * 1000)
-    except AttributeError:
-        return None

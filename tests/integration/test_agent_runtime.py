@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent_runtime import (
+    AgentDecision,
     AgentDecisionRuntime,
     AgentPlanner,
     AgentRuntime,
@@ -231,6 +232,32 @@ class FailingDecisionProvider:
 
     def decide(self, state):
         raise RuntimeError("qwen unavailable")
+
+
+class UsageDecisionProvider:
+    provider_name = "qwen"
+
+    def decide(self, state):
+        return AgentDecision(
+            action_type="final_report",
+            reasoning_summary="provider produced final report decision",
+            confidence=0.9,
+        )
+
+    def get_token_usage(self):
+        return {
+            "prompt_tokens": 12,
+            "completion_tokens": 8,
+            "total": 20,
+            "source": "provider_usage",
+        }
+
+    def get_cost_estimate(self):
+        return {
+            "currency": "USD",
+            "total_cost": 0.0012,
+            "source": "provider_usage",
+        }
 
 
 def test_agent_runtime_core_components_shape_agent_loop():
@@ -1039,6 +1066,47 @@ async def test_decision_runtime_records_provider_fallback_event():
         "reason": "RuntimeError",
         "error_message": "qwen unavailable",
     }
+
+
+@pytest.mark.asyncio
+async def test_decision_runtime_records_provider_metrics_on_decision_event():
+    run_store = MemoryRunStore()
+    scene_store = MemorySceneStore()
+    scene_store.scene["agent_config"] = {"decision_runtime_enabled": True}
+    runtime = AgentRuntime(
+        tool_catalog=StaticCatalog([]),
+        tool_executor=StaticExecutor(),
+        scene_store=scene_store,
+        run_store=run_store,
+        policy_store=MemoryPolicyStore(),
+        decision_runtime=AgentDecisionRuntime(provider=UsageDecisionProvider()),
+    )
+
+    events = [
+        event
+        async for event in runtime.run(
+            scene_id="scene-1",
+            session_id="session-1",
+            goal="diagnose current alerts",
+            principal=Principal(role="admin", subject="pytest"),
+        )
+    ]
+    decision_event = next(event for event in run_store.events if event["type"] == "decision")
+
+    assert events[-1].type == "complete"
+    assert decision_event["payload"]["token_usage"] == {
+        "prompt_tokens": 12,
+        "completion_tokens": 8,
+        "total": 20,
+        "source": "provider_usage",
+    }
+    assert decision_event["payload"]["cost_estimate"] == {
+        "currency": "USD",
+        "total_cost": 0.0012,
+        "source": "provider_usage",
+    }
+    assert run_store.metrics["token_usage"]["source"] == "provider_usage"
+    assert run_store.metrics["cost_estimate"]["source"] == "provider_usage"
 
 
 @pytest.mark.asyncio

@@ -2,8 +2,68 @@
 
 **Feature Branch**: `feature/ai-native-runtime`
 **Created**: 2026-05-13
-**Status**: Draft
+**Status**: Draft / Implementation In Progress
 **Constitution**: [constitution.md](./constitution.md)
+
+## Implementation Status (2026-05-15)
+
+This specification is still the target contract for the AI Native Runtime. The
+current codebase has implemented several supporting capabilities, but it has not
+yet reached the full completion state described here.
+
+Implemented or mostly implemented:
+
+- Native Agent run APIs, replay APIs, approval APIs, feedback APIs, and badcase
+  review / promotion APIs exist.
+- `BoundedReActLoop` exists as an isolated loop skeleton with step, time, and
+  token budget boundaries, but it is not yet wired into `AgentRuntime.run()`.
+- `agent_runs` already stores runtime metrics fields such as `runtime_version`,
+  `trace_id`, `decision_provider`, `step_count`, `token_usage`, and
+  `cost_estimate`.
+- `MetricsCollector` is isolated in `app/agent_runtime/metrics_collector.py` and
+  persists non-empty heuristic token / cost metrics for deterministic runs.
+- `EvidenceAssessor` is isolated in `app/agent_runtime/evidence.py` for current
+  tool-result quality classification, root-cause conflict detection, and handoff
+  reason mapping.
+- `ApprovalGate` is isolated in `app/agent_runtime/approval.py` for high-risk
+  tool pause semantics.
+- `RecoveryManager` is isolated in `app/agent_runtime/recovery.py` for
+  cancellation, timeout, and unexpected-error failure boundaries.
+- `TraceCollector` is isolated in `app/agent_runtime/trace_collector.py` and
+  guards runtime spans without making OpenTelemetry a hard dependency.
+- `BoundedReActLoop` records an `agent.loop_step` span for each decision step.
+  Step spans include action, selected tool, evidence quality, token usage, and a
+  deterministic cost placeholder.
+- Deterministic and Qwen decision providers share the current decision runtime,
+  and Qwen failures emit `provider_fallback` before falling back.
+- Cross-session memory exists as text memory and is injected through
+  `memory_context` events.
+- Badcase feedback, review, and knowledge-promotion queueing are available.
+
+Partially implemented:
+
+- The production runtime loop is still orchestrated inside
+  `app/agent_runtime/runtime.py`; the extracted `BoundedReActLoop` skeleton must
+  still be integrated.
+- Evidence assessment has a dedicated module, but the main runtime loop still
+  needs to aggregate multiple evidence items through conflict detection before
+  final reporting.
+- Recovery strategy selection is still basic; richer retry / alternative /
+  downgrade decisions remain pending.
+- Replay exposes metrics, memory, approval, badcase, and recovery events, but
+  per-step `agent_events` metric columns are not persisted yet.
+- Agent memory does not yet use pgvector embeddings for semantic retrieval.
+
+Not implemented yet:
+
+- Proactive monitor, alert deduplication, and automatic diagnosis triggers.
+- Collaborative intervention APIs and frontend controls.
+- Grafana dashboard artifacts for AgentOps.
+- Full pgvector-backed memory retrieval and badcase clustering / FAQ candidate
+  workflow.
+
+Local-only planning files such as `PLAN.md` and
+`specs/ai-native-runtime/plan.md` must stay untracked.
 
 ## User Scenarios & Testing
 

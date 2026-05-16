@@ -10,9 +10,11 @@ import json
 import uuid
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager, nullcontext
-from typing import Any, Literal, Protocol, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from app.agent_runtime.ports import DecisionProvider
 
 ActionType = Literal[
     "observe",
@@ -225,17 +227,25 @@ class AgentDecisionState(BaseModel):
         )
 
 
-class DecisionProvider(Protocol):
-    """Provider interface for deterministic or model-backed decisions."""
-
-    def decide(self, state: AgentDecisionState) -> AgentDecision:
-        """Return the next structured decision."""
-
-
 class DeterministicDecisionProvider:
     """Rule-based provider used before model-backed decisioning is enabled."""
 
     provider_name = "deterministic"
+
+    def get_token_usage(self) -> dict[str, Any]:
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total": 0,
+            "source": "deterministic_zero",
+        }
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        return {
+            "currency": "USD",
+            "total_cost": 0.0,
+            "source": "deterministic_zero",
+        }
 
     def decide(self, state: AgentDecisionState) -> AgentDecision:
         if state.budget.exhausted:
@@ -309,6 +319,29 @@ class QwenDecisionProvider:
     def __init__(self, invoke_json: Callable[[AgentDecisionState], str]) -> None:
         self._invoke_json = invoke_json
 
+    def get_token_usage(self) -> dict[str, Any]:
+        if hasattr(self._invoke_json, "get_token_usage"):
+            usage = self._invoke_json.get_token_usage()
+            if isinstance(usage, dict):
+                return usage
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total": 0,
+            "source": "provider_usage_unavailable",
+        }
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        if hasattr(self._invoke_json, "get_cost_estimate"):
+            cost = self._invoke_json.get_cost_estimate()
+            if isinstance(cost, dict):
+                return cost
+        return {
+            "currency": "USD",
+            "total_cost": 0.0,
+            "source": "provider_usage_unavailable",
+        }
+
     def decide(self, state: AgentDecisionState) -> AgentDecision:
         raw = self._invoke_json(state)
         try:
@@ -366,6 +399,7 @@ class LangChainQwenDecisionInvoker:
 
     def __init__(self, chat_model: Any) -> None:
         self._chat_model = chat_model
+        self._last_token_usage: dict[str, Any] = _unavailable_token_usage()
 
     def __call__(self, state: AgentDecisionState) -> str:
         messages = [
@@ -383,6 +417,7 @@ class LangChainQwenDecisionInvoker:
             },
         ]
         response = self._chat_model.invoke(messages)
+        self._last_token_usage = _extract_response_token_usage(response)
         content = getattr(response, "content", response)
         if isinstance(content, list):
             parts = [
@@ -391,6 +426,61 @@ class LangChainQwenDecisionInvoker:
             ]
             return "".join(parts)
         return str(content)
+
+    def get_token_usage(self) -> dict[str, Any]:
+        return self._last_token_usage
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        token_total = int(self._last_token_usage.get("total") or 0)
+        if token_total <= 0:
+            return {
+                "currency": "USD",
+                "total_cost": 0.0,
+                "source": "provider_usage_unavailable",
+            }
+        return {
+            "currency": "USD",
+            "total_cost": round(token_total * 0.000002, 6),
+            "source": "heuristic_from_provider_tokens",
+            "components": {
+                "tokens": token_total,
+            },
+        }
+
+
+class DecisionProviderFactory:
+    """Create decision providers from runtime settings."""
+
+    def __init__(
+        self,
+        settings: Any,
+        *,
+        chat_model_factory: Callable[[str], Any] | None = None,
+    ) -> None:
+        self._settings = settings
+        self._chat_model_factory = chat_model_factory
+
+    def create_provider(self, provider_name: str | None = None) -> DecisionProvider:
+        selected = (provider_name or self._settings.agent_decision_provider).strip().lower()
+        if selected == "qwen":
+            if self._chat_model_factory is None:
+                raise ValueError("qwen decision provider requires chat_model_factory")
+            return QwenDecisionProvider(
+                LangChainQwenDecisionInvoker(
+                    self._chat_model_factory(self._settings.dashscope_model),
+                )
+            )
+        return DeterministicDecisionProvider()
+
+    def create_runtime(self, *, checkpoint_saver: Any | None = None) -> AgentDecisionRuntime:
+        selected = self._settings.agent_decision_provider.strip().lower()
+        provider = self.create_provider(selected)
+        fallback_provider = DeterministicDecisionProvider() if selected == "qwen" else None
+        return AgentDecisionRuntime(
+            provider=provider,
+            fallback_provider=fallback_provider,
+            checkpoint_saver=checkpoint_saver,
+        )
 
 
 class AgentDecisionRuntime:
@@ -410,14 +500,24 @@ class AgentDecisionRuntime:
         self._checkpoint_saver = checkpoint_saver
         self._compiled_graph: Any | None = None
         self._provider_fallback_events: list[dict[str, Any]] = []
+        self._last_token_usage: dict[str, Any] = _unavailable_token_usage()
+        self._last_cost_estimate: dict[str, Any] = _unavailable_cost_estimate()
+
+    @property
+    def provider(self) -> DecisionProvider:
+        """Return the active decision provider for runtime adapters."""
+
+        return self._provider
 
     def decide_once(self, state: AgentDecisionState) -> AgentDecisionState:
         try:
             decision = self._provider.decide(state)
+            self._record_provider_metrics(self._provider)
         except Exception as exc:
             if self._fallback_provider is None:
                 raise
             decision = self._fallback_provider.decide(state)
+            self._record_provider_metrics(self._fallback_provider)
             self._provider_fallback_events.append(
                 {
                     "from_provider": _provider_name(self._provider),
@@ -427,6 +527,16 @@ class AgentDecisionRuntime:
                 }
             )
         return state.with_decision(decision)
+
+    def get_token_usage(self) -> dict[str, Any]:
+        return dict(self._last_token_usage)
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        return dict(self._last_cost_estimate)
+
+    def _record_provider_metrics(self, provider: DecisionProvider) -> None:
+        self._last_token_usage = provider.get_token_usage()
+        self._last_cost_estimate = provider.get_cost_estimate()
 
     def consume_provider_fallback_events(self) -> list[dict[str, Any]]:
         events = list(self._provider_fallback_events)
@@ -732,6 +842,57 @@ def _parse_strict_json(raw: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Decision provider returned non-object JSON")
     return parsed
+
+
+def _unavailable_token_usage() -> dict[str, Any]:
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total": 0,
+        "source": "provider_usage_unavailable",
+    }
+
+
+def _unavailable_cost_estimate() -> dict[str, Any]:
+    return {
+        "currency": "USD",
+        "total_cost": 0.0,
+        "source": "provider_usage_unavailable",
+    }
+
+
+def _extract_response_token_usage(response: Any) -> dict[str, Any]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, dict):
+        metadata = getattr(response, "response_metadata", None)
+        if isinstance(metadata, dict):
+            usage = metadata.get("token_usage")
+    if not isinstance(usage, dict):
+        return _unavailable_token_usage()
+
+    prompt_tokens = _usage_int(usage, "prompt_tokens", "input_tokens")
+    completion_tokens = _usage_int(usage, "completion_tokens", "output_tokens")
+    total = _usage_int(usage, "total", "total_tokens")
+    if total <= 0:
+        total = prompt_tokens + completion_tokens
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total": total,
+        "source": "provider_usage",
+    }
+
+
+def _usage_int(usage: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = usage.get(key)
+        if value is None:
+            continue
+        try:
+            return max(int(value), 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def _qwen_decision_prompt(state: AgentDecisionState) -> str:
