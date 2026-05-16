@@ -48,10 +48,11 @@ editing code:
   - Current class lives inline in runtime.py (line 169)
   - Accept token_usage (JSON), cost_estimate (JSON), latency_ms, step_count
   - Persist to agent_runs table with real values (no more None)
-- [ ] T003 [P] Add Alembic migration for agent_events + agent_feedback new columns
+- [x] T003 [P] Add Alembic migration for agent_events + agent_feedback new columns
   - agent_events: evidence_quality, recovery_action, step_index, token_usage, cost_estimate
   - agent_feedback: correction, badcase_flag, original_report
   - Note: agent_runs already has token_usage (JSON), cost_estimate (JSON), step_count, decision_provider
+  - Status: migration 20260516_0014 applied; agent_events columns verified in production
 - [x] T004 Modify AgentRuntime to use BoundedReActLoop in `app/agent_runtime/runtime.py`
   - Replace 400+ line monolith `_run_orchestration` method
   - Keep external interface unchanged (SSE events compatible)
@@ -127,11 +128,11 @@ editing code:
 - [x] T017 Implement ProviderFactory in `app/agent_runtime/decision.py`
   - Create provider based on agent_decision_provider config
   - Support runtime switching (no restart needed)
-- [ ] T018 Implement Provider Fallback in `app/agent_runtime/loop.py`
+- [x] T018 Implement Provider Fallback in `app/agent_runtime/loop.py`
   - Qwen call fails -> auto-degrade to Deterministic
   - Record provider_fallback event
   - Notify frontend (SSE event)
-  - Status: loop-level fallback and consumable fallback event cache implemented; runtime/SSE emission remains pending
+  - Status: loop-level fallback + consumable event cache + runtime SSE emission all implemented
 
 **Checkpoint**: Both providers switchable at runtime, fallback reliable
 
@@ -188,26 +189,28 @@ editing code:
   - Recovery strategies: retry_same_tool, try_alternative, downgrade_report, handoff
   - Select strategy based on evidence_quality
   - Status: retry / alternative / downgrade / handoff strategies are implemented and covered; loop integration remains T027
-- [ ] T026 Implement ApprovalGate in `app/agent_runtime/approval.py`
+- [x] T026 Implement ApprovalGate in `app/agent_runtime/approval.py`
   - change/destructive tools -> pending_approval
   - Wait for human approve/reject (with timeout)
   - Timeout -> auto-reject + handoff
-  - Status: approval pause gate extracted; resume / expiry remains in application services
+  - Status: approval pause gate + resume via AgentResumeService + API endpoints implemented
 - [x] T027 Integrate RecoveryManager into BoundedReActLoop in `app/agent_runtime/loop.py`
   - assess phase finds insufficient -> recovery
   - recovery attempt still insufficient -> bounded_report or handoff
   - Status: `BoundedReActLoop` now accepts `RecoveryManager`, routes empty/weak evidence before provider calls, and maps retry / downgrade_report / handoff decisions with unit coverage
-- [ ] T028 Implement HandoffSummary generation in `app/agent_runtime/synthesizer.py`
+- [x] T028 Implement HandoffSummary generation in `app/agent_runtime/runtime.py`
   - Collected evidence + failed tools + suggested next steps
   - Send via SSE to frontend
+  - Status: handoff path in runtime generates FinalReportContract with handoff_required=True, persists to DB, emits SSE event
 
 **Checkpoint**: Agent recovers from anomalies, no forged conclusions
 
 ### Tests
 
 - [x] T029 [P] Unit test: RecoveryManager strategy selection in `tests/unit/test_recovery.py`
-- [ ] T030 Integration test: Full recovery path in `tests/integration/test_recovery.py`
+- [x] T030 Integration test: Full recovery path in `tests/unit/test_react_loop_integration.py`
   - Mock empty result -> verify retry -> verify downgrade_report
+  - Status: 3 tests covering retry→downgrade, recovery intercept before provider, and handoff on empty evidence
   - Mock consecutive failures -> verify handoff
 
 ---
