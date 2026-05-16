@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+EVENT_PROACTIVE_ALERT = "proactive_alert"
+
 
 @dataclass(frozen=True)
 class AgentRuntimeEvent:
@@ -34,3 +36,29 @@ class AgentRuntimeEvent:
         if self.final_report is not None:
             data["final_report"] = self.final_report
         return data
+
+
+def proactive_alert_event(
+    *,
+    run_id: str,
+    service_name: str,
+    metric_type: str,
+    severity: str,
+    message: str,
+    run_id_diagnosis: str | None = None,
+    alert_key: str = "",
+) -> AgentRuntimeEvent:
+    """Create a proactive alert SSE event."""
+    return AgentRuntimeEvent(
+        type=EVENT_PROACTIVE_ALERT,
+        stage="monitoring",
+        run_id=run_id,
+        message=message,
+        payload={
+            "service_name": service_name,
+            "metric_type": metric_type,
+            "severity": severity,
+            "alert_key": alert_key,
+            "diagnosis_run_id": run_id_diagnosis,
+        },
+    )

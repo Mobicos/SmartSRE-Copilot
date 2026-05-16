@@ -282,6 +282,85 @@ class NativeAgentApplicationService:
             knowledge_filename=knowledge_filename,
         )
 
+    # -- FAQ candidate workflow (T033) ----------------------------------------
+
+    def list_faq_candidates(
+        self,
+        *,
+        min_cluster_size: int = 5,
+        similarity_threshold: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Return FAQ candidates auto-generated from badcase clusters."""
+        from app.application.badcase_service import BadcaseClusterer
+
+        badcases = self._agent_feedback_repository.list_badcases(limit=200)
+        confirmed = [bc for bc in badcases if bc.get("review_status") == "confirmed"]
+        if len(confirmed) < min_cluster_size:
+            return []
+
+        clusterer = BadcaseClusterer(
+            similarity_threshold=similarity_threshold,
+            min_cluster_size=min_cluster_size,
+        )
+        return [
+            {
+                "cluster_id": c.cluster_id,
+                "title": c.title,
+                "corrections": c.corrections,
+                "feedback_ids": c.feedback_ids,
+                "suggested_answer": c.suggested_answer,
+            }
+            for c in clusterer.generate_faq_candidates(confirmed)
+        ]
+
+    def confirm_faq_candidate(
+        self,
+        *,
+        feedback_ids: list[str],
+        reviewed_by: str,
+    ) -> dict[str, Any]:
+        """Confirm a cluster of badcases as knowledge and persist each entry.
+
+        Each feedback in the cluster is set to ``review_status="confirmed"``,
+        then the knowledge document is generated and promoted via the existing
+        object-storage + indexing-task path.
+        """
+        from app.application.badcase_service import BadcaseClusterer
+
+        clusterer = BadcaseClusterer(min_cluster_size=1)
+        badcases = [
+            bc
+            for bc in self._agent_feedback_repository.list_badcases(limit=200)
+            if bc.get("feedback_id") in feedback_ids
+        ]
+        clusters = clusterer.cluster(badcases)
+        matched = next(
+            (c for c in clusters if set(c.feedback_ids) == set(feedback_ids)),
+            None,
+        )
+        if matched is None:
+            return {"status": "cluster_not_found", "promoted": []}
+
+        promoted: list[dict[str, Any]] = []
+        for fid in feedback_ids:
+            self._agent_feedback_repository.review_badcase(
+                fid,
+                review_status="confirmed",
+                review_note="Auto-confirmed as FAQ cluster.",
+                reviewed_by=reviewed_by,
+            )
+            doc = self.build_badcase_knowledge_document(fid)
+            if doc is None or doc.get("status") != "ready":
+                continue
+            promoted.append(doc)
+
+        return {
+            "status": "confirmed",
+            "cluster_id": matched.cluster_id,
+            "size": matched.size,
+            "promoted": promoted,
+        }
+
     def list_agent_run_events(self, run_id: str) -> list[dict[str, Any]] | None:
         if self._agent_run_repository.get_run(run_id) is None:
             return None
