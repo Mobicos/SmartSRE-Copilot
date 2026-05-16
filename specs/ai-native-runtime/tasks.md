@@ -252,7 +252,7 @@ editing code:
   - Attributes: step_index, tool_name, evidence_quality, token_usage, cost
   - Status: optional span collector extracted; tool-call and loop-step spans wired
 - [x] T036 Integrate TraceCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
-- [ ] T037 [P] Update golden scenario eval tests in `tests/agent_scenarios/`
+- [x] T037 [P] Update golden scenario eval tests in `tests/agent_scenarios/`
   - 6 golden scenarios all pass regression eval
 - [x] T038 Update CLAUDE.md and `docs/` architecture documentation
 
