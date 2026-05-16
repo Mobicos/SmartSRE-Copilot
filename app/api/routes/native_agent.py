@@ -12,6 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.providers import (
     get_agent_resume_service,
     get_indexing_task_service,
+    get_intervention_bridge,
     get_native_agent_application_service,
     get_object_storage,
 )
@@ -36,6 +37,17 @@ router = APIRouter()
 class AgentApprovalDecisionRequest(BaseModel):
     decision: str = Field(pattern="^(approved|rejected)$")
     comment: str | None = None
+
+
+class InterventionRequest(BaseModel):
+    intervention_type: str = Field(
+        pattern="^(inject_evidence|replace_tool_call|modify_goal)$",
+        description="Type of intervention to apply",
+    )
+    payload: dict = Field(
+        default_factory=dict,
+        description="Intervention-specific payload",
+    )
 
 
 class SceneDeleteBatchRequest(BaseModel):
@@ -435,6 +447,51 @@ async def resume_agent_approval(
     return json_response(
         status_code=200,
         content={"code": 200, "message": "success", "data": result},
+    )
+
+
+@router.post("/agent/runs/{run_id}/intervene")
+async def intervene_agent_run(
+    run_id: str,
+    request: InterventionRequest,
+    principal: Principal = Depends(require_capability("aiops:run")),
+    native_agent_service: NativeAgentApplicationService = Depends(
+        get_native_agent_application_service
+    ),
+    intervention_bridge=Depends(get_intervention_bridge),
+):
+    """Inject evidence, replace a tool call, or modify the goal of a running agent."""
+    run = native_agent_service.get_agent_run(run_id)
+    if run is None:
+        return JSONResponse(status_code=404, content={"code": 404, "message": "not_found"})
+    if run.get("status") not in ("running", "waiting_approval"):
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "message": "run_not_running"},
+        )
+    from app.agent_runtime.intervention import Intervention, InterventionType
+
+    iv_type = InterventionType(request.intervention_type)
+    intervention = Intervention(
+        intervention_id=f"iv-{run_id}-{hash(request.intervention_type) % 10000:04d}",
+        run_id=run_id,
+        intervention_type=iv_type,
+        payload={
+            **request.payload,
+            "actor": principal.subject,
+        },
+    )
+    intervention_bridge.add(intervention)
+    return json_response(
+        status_code=200,
+        content={
+            "code": 200,
+            "message": "success",
+            "data": {
+                "intervention_id": intervention.intervention_id,
+                "intervention_type": request.intervention_type,
+            },
+        },
     )
 
 

@@ -310,6 +310,27 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "InterventionRequest": {
+        "properties": {
+          "intervention_type": {
+            "description": "Type of intervention to apply",
+            "pattern": "^(inject_evidence|replace_tool_call|modify_goal)$",
+            "title": "Intervention Type",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "description": "Intervention-specific payload",
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "intervention_type"
+        ],
+        "title": "InterventionRequest",
+        "type": "object"
+      },
       "ScenarioEvaluationRequest": {
         "properties": {
           "run_id": {
@@ -1353,6 +1374,73 @@
           }
         },
         "summary": "Create Agent Feedback",
+        "tags": [
+          "NativeAgent"
+        ]
+      }
+    },
+    "/api/v1/agent/runs/{run_id}/intervene": {
+      "post": {
+        "description": "Inject evidence, replace a tool call, or modify the goal of a running agent.",
+        "operationId": "NativeAgent-intervene_agent_run-post-api_v1_agent_runs_run_id_intervene",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterventionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Intervene Agent Run",
         "tags": [
           "NativeAgent"
         ]

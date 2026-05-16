@@ -78,6 +78,12 @@ class RuntimeContainer:
         return ToolCatalog()
 
     @cached_property
+    def intervention_bridge(self) -> Any:
+        from app.agent_runtime.intervention import InterventionBridge
+
+        return InterventionBridge()
+
+    @cached_property
     def tool_executor(self) -> ToolExecutor:
         from app.agent_runtime import ToolExecutor, ToolPolicyRepositoryAdapter
 
@@ -119,6 +125,7 @@ class RuntimeContainer:
             policy_store=self.policy_store,
             memory_store=self.memory_store,
             decision_runtime=self.decision_runtime,
+            intervention_bridge=self.intervention_bridge,
         )
 
     def reset_for_testing(self) -> None:
@@ -390,6 +397,10 @@ def get_scenario_regression_service() -> ScenarioRegressionService:
 
 def get_native_agent_application_service() -> NativeAgentApplicationService:
     return get_app_container().native_agent_application_service
+
+
+def get_intervention_bridge() -> Any:
+    return get_app_container().runtime.intervention_bridge
 
 
 def initialize_services() -> None:
