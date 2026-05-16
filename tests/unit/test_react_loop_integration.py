@@ -10,10 +10,8 @@ from app.agent_runtime.decision import (
     AgentGoalContract,
     EvidenceAssessment,
 )
-from app.agent_runtime.evidence import EvidenceAssessor
 from app.agent_runtime.loop import BoundedReActLoop, LoopBudget
-from app.agent_runtime.recovery import RecoveryManager, RecoveryPlan
-from app.agent_runtime.state import EvidenceItem
+from app.agent_runtime.recovery import RecoveryPlan
 from app.agent_runtime.tool_executor import ToolExecutionResult
 
 

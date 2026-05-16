@@ -33,7 +33,7 @@ from app.agent_runtime.events import AgentRuntimeEvent
 from app.agent_runtime.evidence import EvidenceAssessor
 from app.agent_runtime.executor import AgentToolExecutor
 from app.agent_runtime.guardrails import sanitize_goal
-from app.agent_runtime.loop import BoundedReActLoop, LoopBudget, LoopResult, LoopStep
+from app.agent_runtime.loop import BoundedReActLoop, LoopBudget, LoopStep
 from app.agent_runtime.metrics_collector import MetricsCollector
 from app.agent_runtime.planner import AgentPlanner
 from app.agent_runtime.policy import ToolPolicyGate
