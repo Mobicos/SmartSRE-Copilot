@@ -8,18 +8,15 @@ analysis.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
-
 
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class MetricAnomaly:
@@ -71,6 +68,7 @@ class ProbeResult:
 # Protocols
 # ---------------------------------------------------------------------------
 
+
 class MetricProvider(Protocol):
     """Interface for fetching metrics from an external source."""
 
@@ -107,6 +105,7 @@ class DiagnosisTrigger(Protocol):
 # AlertDeduplicator
 # ---------------------------------------------------------------------------
 
+
 class AlertDeduplicator:
     """Suppress repeated alerts for the same metric within a time window.
 
@@ -141,6 +140,7 @@ class AlertDeduplicator:
 # In-memory AlertStore (for tests and single-process deployments)
 # ---------------------------------------------------------------------------
 
+
 class InMemoryAlertStore:
     """In-memory alert dedup store — not shared across processes."""
 
@@ -157,6 +157,7 @@ class InMemoryAlertStore:
 # ---------------------------------------------------------------------------
 # RedisAlertStore
 # ---------------------------------------------------------------------------
+
 
 class RedisAlertStore:
     """Redis-backed alert dedup store — shared across processes."""
@@ -192,6 +193,7 @@ class RedisAlertStore:
 # DegradedMetricProvider
 # ---------------------------------------------------------------------------
 
+
 class DegradedMetricProvider:
     """Fallback metric provider using local MCP monitor_server simulation.
 
@@ -199,9 +201,7 @@ class DegradedMetricProvider:
     Returns synthetic critical-scenario metrics.
     """
 
-    def get_cpu_metrics(
-        self, service_name: str, *, scenario: str = "critical"
-    ) -> dict[str, Any]:
+    def get_cpu_metrics(self, service_name: str, *, scenario: str = "critical") -> dict[str, Any]:
         return {
             "service_name": service_name,
             "metric_name": "cpu_usage_percent",
@@ -233,6 +233,7 @@ class DegradedMetricProvider:
 # ---------------------------------------------------------------------------
 # ProactiveMonitor
 # ---------------------------------------------------------------------------
+
 
 class ProactiveMonitor:
     """Periodically probe metrics, deduplicate, and trigger auto-diagnosis.
@@ -355,9 +356,7 @@ class ProactiveMonitor:
                     metric_type="memory",
                     max_value=mem_max,
                     threshold=self._memory_threshold,
-                    message=mem.get("alert_info", {}).get(
-                        "message", f"Memory {mem_max}%"
-                    ),
+                    message=mem.get("alert_info", {}).get("message", f"Memory {mem_max}%"),
                 )
             )
 
@@ -378,6 +377,7 @@ class ProactiveMonitor:
 # ---------------------------------------------------------------------------
 # AutoDiagnosisTrigger
 # ---------------------------------------------------------------------------
+
 
 class AutoDiagnosisTrigger:
     """Trigger an automatic AgentRun when an anomaly is detected.
@@ -416,9 +416,7 @@ class AutoDiagnosisTrigger:
     ) -> str | None:
         self._run_counter += 1
         session_id = f"{self._session_prefix}-{self._run_counter}"
-        anomaly_summary = "; ".join(
-            f"{a.metric_type}={a.max_value:.0f}%" for a in anomalies
-        )
+        anomaly_summary = "; ".join(f"{a.metric_type}={a.max_value:.0f}%" for a in anomalies)
         goal = (
             f"主动探测发现异常：{service_name} 指标异常（{anomaly_summary}），"
             f"请分析根因并给出处置建议。"

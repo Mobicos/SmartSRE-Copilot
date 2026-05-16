@@ -124,7 +124,5 @@ class MemoryRetriever:
                 f"{i}. [{mem.conclusion_type}] {mem.conclusion_text} "
                 f"(置信度 {confidence_pct}%{boost}, 相似度 {mem.similarity:.2f})"
             )
-        lines.append(
-            "\n> 以上为历史相似诊断结论，仅供参考。请结合当前实际证据进行判断。"
-        )
+        lines.append("\n> 以上为历史相似诊断结论，仅供参考。请结合当前实际证据进行判断。")
         return "\n".join(lines)

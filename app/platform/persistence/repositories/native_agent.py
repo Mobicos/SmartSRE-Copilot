@@ -7,7 +7,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, update
+from sqlalchemy import delete, text, update
 from sqlmodel import Session, col, select
 
 from app.agent_runtime.ports import AgentRunStore, SceneStore, ToolPolicyStore
@@ -1114,9 +1114,7 @@ class AgentMemoryRepository:
                 {"boost": confidence_boost, "now": _utc_now(), "mid": memory_id},
             )
             db.commit()
-            row = db.exec(
-                select(AgentMemory).where(AgentMemory.memory_id == memory_id)
-            ).first()
+            row = db.exec(select(AgentMemory).where(AgentMemory.memory_id == memory_id)).first()
         if row is None:
             return None
         return self._row_to_dict(row)

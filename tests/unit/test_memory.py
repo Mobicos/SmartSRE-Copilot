@@ -12,7 +12,6 @@ from app.agent_runtime.loop import BoundedReActLoop, LoopBudget
 from app.agent_runtime.memory_extractor import MemoryExtractor
 from app.agent_runtime.memory_retriever import MemoryItem, MemoryRetriever
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -51,17 +50,19 @@ class _FakeMemoryStore:
     ) -> str:
         self._counter += 1
         memory_id = f"mem-{self._counter:03d}"
-        self.memories.append({
-            "memory_id": memory_id,
-            "workspace_id": workspace_id,
-            "run_id": run_id,
-            "conclusion_text": conclusion_text,
-            "conclusion_type": conclusion_type,
-            "confidence": confidence,
-            "validation_count": 0,
-            "metadata": metadata or {},
-            "embedding": embedding,
-        })
+        self.memories.append(
+            {
+                "memory_id": memory_id,
+                "workspace_id": workspace_id,
+                "run_id": run_id,
+                "conclusion_text": conclusion_text,
+                "conclusion_type": conclusion_type,
+                "confidence": confidence,
+                "validation_count": 0,
+                "metadata": metadata or {},
+                "embedding": embedding,
+            }
+        )
         return memory_id
 
     def search_memory_vector(
@@ -99,7 +100,7 @@ def _fake_cosine(a: list[float], b: list[float]) -> float:
     """Simple cosine similarity for testing."""
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     na = sum(x * x for x in a) ** 0.5
     nb = sum(x * x for x in b) ** 0.5
     if na == 0 or nb == 0:
@@ -385,8 +386,10 @@ class TestLoopMemoryIntegration:
 
         class _TerminalProvider:
             provider_name = "test"
+
             def decide(self, state):
                 from app.agent_runtime.decision import AgentDecision, EvidenceAssessment
+
                 return AgentDecision(
                     action_type="final_report",
                     selected_tool=None,
@@ -411,8 +414,10 @@ class TestLoopMemoryIntegration:
     def test_no_memory_retriever_no_injection(self):
         class _TerminalProvider:
             provider_name = "test"
+
             def decide(self, state):
                 from app.agent_runtime.decision import AgentDecision, EvidenceAssessment
+
                 return AgentDecision(
                     action_type="final_report",
                     selected_tool=None,
@@ -430,13 +435,16 @@ class TestLoopMemoryIntegration:
         class _FailingRetriever:
             def retrieve(self, **kwargs):
                 raise ConnectionError("down")
+
             def format_for_context(self, memories):
                 return ""
 
         class _TerminalProvider:
             provider_name = "test"
+
             def decide(self, state):
                 from app.agent_runtime.decision import AgentDecision, EvidenceAssessment
+
                 return AgentDecision(
                     action_type="final_report",
                     selected_tool=None,

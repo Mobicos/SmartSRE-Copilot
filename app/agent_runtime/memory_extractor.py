@@ -89,11 +89,13 @@ class MemoryExtractor:
                 confidence=confidence,
                 metadata=metadata,
             )
-            stored.append({
-                "memory_id": memory_id,
-                "conclusion_type": conclusion_type,
-                "text_preview": truncated[:100],
-            })
+            stored.append(
+                {
+                    "memory_id": memory_id,
+                    "conclusion_type": conclusion_type,
+                    "text_preview": truncated[:100],
+                }
+            )
 
         return stored
 

@@ -81,7 +81,10 @@ class BadcaseClusterer:
 
             assigned = False
             for cluster in clusters:
-                if _char_bigram_jaccard(correction, cluster["representative"]) >= self._similarity_threshold:
+                if (
+                    _char_bigram_jaccard(correction, cluster["representative"])
+                    >= self._similarity_threshold
+                ):
                     cluster["ids"].append(feedback_id)
                     cluster["corrections"].append(correction)
                     assigned = True
@@ -107,9 +110,7 @@ class BadcaseClusterer:
             for c in clusters
         ]
 
-    def generate_faq_candidates(
-        self, badcases: list[dict[str, Any]]
-    ) -> list[FAQCandidate]:
+    def generate_faq_candidates(self, badcases: list[dict[str, Any]]) -> list[FAQCandidate]:
         """Return FAQ candidates for clusters whose size >= min_cluster_size."""
         clusters = self.cluster(badcases)
         candidates: list[FAQCandidate] = []
@@ -133,16 +134,12 @@ class BadcaseClusterer:
         cluster: ClusterAnalysis,
         badcases: list[dict[str, Any]],
     ) -> FAQCandidate:
-        unique_corrections = list(dict.fromkeys(
-            str(bc.get("correction") or "").strip()
-            for bc in badcases
-            if bc.get("correction")
-        ))
-        goals = [
-            _goal_from_badcase(bc)
-            for bc in badcases
-            if _goal_from_badcase(bc)
-        ]
+        unique_corrections = list(
+            dict.fromkeys(
+                str(bc.get("correction") or "").strip() for bc in badcases if bc.get("correction")
+            )
+        )
+        goals = [_goal_from_badcase(bc) for bc in badcases if _goal_from_badcase(bc)]
         title = _most_common(goals) if goals else "Unknown FAQ topic"
         suggested_answer = _deduplicated_summary(unique_corrections)
 
