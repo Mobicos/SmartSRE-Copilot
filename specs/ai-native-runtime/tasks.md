@@ -293,7 +293,7 @@ editing code:
 
 - [x] T044 [P] Unit test: AlertDeduplicator + ProactiveMonitor in `tests/unit/test_proactive.py`
   - Status: 24 tests covering dedup suppression, probe anomalies, severity levels, multi-service probing, trigger integration, degraded provider, and interval scheduling
-- [ ] T045 Integration test: full proactive flow in `tests/integration/test_proactive.py`
+- [x] T045 Integration test: full proactive flow in `tests/unit/test_proactive_integration.py`
   - Mock MCP tool returning abnormal metrics -> verify auto run created
   - Mock MCP tool failure -> verify degraded path
 
@@ -335,7 +335,7 @@ editing code:
   - Test: empty store -> empty list
 - [x] T052 [P] Unit test: MemoryExtractor from final_report in `tests/unit/test_memory.py`
   - Test: extract root cause, evidence, solution from structured report
-- [ ] T053 Integration test: full memory cycle in `tests/integration/test_memory.py`
+- [x] T053 Integration test: full memory cycle in `tests/unit/test_memory_integration.py`
   - Store conclusion from run #1 -> retrieve in run #2 -> verify context injection
 
 ---
@@ -373,7 +373,7 @@ editing code:
   - Test: inject_evidence -> DecisionContext.extra_evidence contains payload
   - Test: replace_tool_call -> AgentDecision overwritten
   - Test: intervention recorded as agent_event
-- [ ] T060 Integration test: collaborative flow in `tests/integration/test_intervention.py`
+- [x] T060 Integration test: collaborative flow in `tests/unit/test_intervention_integration.py`
   - Start run -> inject evidence mid-execution -> verify next decision uses evidence
   - 3 low-confidence steps -> verify auto-handoff triggered
 
