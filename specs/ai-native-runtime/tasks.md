@@ -142,10 +142,11 @@ editing code:
 
 ### Tests
 
-- [ ] T019 [P] Unit test: ProviderFactory creation and switching in `tests/unit/test_decision.py`
-- [ ] T020 [P] Unit test: QwenDecisionProvider fallback in `tests/unit/test_decision.py`
+- [x] T019 [P] Unit test: ProviderFactory creation and switching in `tests/unit/test_decision.py`
+  - Status: deterministic/qwen provider factory creation is covered in `tests/unit/test_decision_provider_ports.py`
+- [x] T020 [P] Unit test: QwenDecisionProvider fallback in `tests/unit/test_decision.py`
   - Mock LLM failure -> verify degrade to deterministic
-  - Status: loop fallback is covered in `tests/unit/test_runtime_foundation.py`; provider-specific runtime wiring test remains pending
+  - Status: loop fallback is covered in `tests/unit/test_runtime_foundation.py`; factory-created Qwen runtime fallback metrics are covered in `tests/unit/test_decision_provider_ports.py`
 
 ---
 
@@ -160,6 +161,7 @@ editing code:
   - Collect token_usage from DecisionProvider (as JSON dict)
   - Collect tool_call latency from ToolExecutor
   - Calculate cost_estimate = prompt_cost + completion_cost + tool_output_cost
+  - Status: collector now exposes `collect_run_metrics()`, prefers provider token/cost events, and falls back to heuristic estimates; tool execution latency remains pending
 - [ ] T022 Integrate MetricsCollector into BoundedReActLoop in `app/agent_runtime/loop.py`
   - Record step_metrics at each step
   - Persist to database at run completion
@@ -170,7 +172,7 @@ editing code:
 
 ### Tests
 
-- [ ] T024 [P] Unit test: MetricsCollector.collect_run_metrics in `tests/unit/test_metrics.py`
+- [x] T024 [P] Unit test: MetricsCollector.collect_run_metrics in `tests/unit/test_metrics.py`
   - Verify token_usage is non-empty JSON dict
   - Verify cost_estimate is non-empty JSON dict
   - Verify step_count matches actual steps

@@ -85,6 +85,11 @@ class _FakeQwenChatModel:
         return _FakeQwenResponse()
 
 
+class _FailingQwenChatModel:
+    def invoke(self, _messages):
+        raise RuntimeError("qwen unavailable")
+
+
 def test_langchain_qwen_invoker_exposes_provider_token_usage():
     invoker = LangChainQwenDecisionInvoker(_FakeQwenChatModel())
     provider = QwenDecisionProvider(invoker)
@@ -136,3 +141,24 @@ def test_provider_factory_creates_qwen_provider_with_fallback():
     assert isinstance(provider, QwenDecisionProvider)
     assert created_models == ["qwen-max", "qwen-max"]
     assert isinstance(runtime._fallback_provider, DeterministicDecisionProvider)
+
+
+def test_provider_factory_runtime_exposes_fallback_provider_metrics():
+    factory = DecisionProviderFactory(
+        AppSettings(agent_decision_provider="qwen", dashscope_model="qwen-max"),
+        chat_model_factory=lambda _model_name: _FailingQwenChatModel(),
+    )
+    runtime = factory.create_runtime()
+    state = build_initial_decision_state(
+        run_id="run-1",
+        goal="Diagnose latency",
+        workspace_id="workspace-1",
+        scene_id="scene-1",
+        available_tools=["SearchLog"],
+    )
+
+    result = runtime.decide_once(state)
+
+    assert result.decisions[-1].selected_tool == "SearchLog"
+    assert runtime.get_token_usage()["source"] == "deterministic_zero"
+    assert runtime.get_cost_estimate()["source"] == "deterministic_zero"

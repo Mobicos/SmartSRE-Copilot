@@ -424,6 +424,8 @@ class AgentRuntime:
                     payload={
                         "checkpoint_ns": self._decision_runtime.checkpoint_ns,
                         "decision": latest_decision.to_event_payload(),
+                        "token_usage": self._decision_runtime.get_token_usage(),
+                        "cost_estimate": self._decision_runtime.get_cost_estimate(),
                         "state_status": decision_state.status,
                     },
                 )

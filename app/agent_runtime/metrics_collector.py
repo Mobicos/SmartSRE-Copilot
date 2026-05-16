@@ -19,28 +19,33 @@ class MetricsCollector:
         self._run_store = run_store
         self._settings = settings
 
+    def collect_run_metrics(self, run_id: str) -> dict[str, Any] | None:
+        run = self._run_store.get_run(run_id)
+        events = self._run_store.list_events(run_id)
+        if run is None:
+            return None
+        return {
+            "runtime_version": RUNTIME_VERSION,
+            "trace_id": run_id,
+            "model_name": _runtime_model_name(self._settings),
+            "decision_provider": _runtime_decision_provider(self._settings),
+            "step_count": _metric_step_count(events),
+            "tool_call_count": len(_events_by_type(events, "tool_call")),
+            "latency_ms": _latency_ms(run.get("created_at"), run.get("updated_at")),
+            "error_type": _metric_error_type(run, events),
+            "approval_state": _metric_approval_state(events),
+            "retrieval_count": len(_events_by_type(events, "knowledge_context")),
+            "token_usage": _metric_token_usage(run, events, self._settings),
+            "cost_estimate": _metric_cost_estimate(run, events, self._settings),
+            "handoff_reason": _metric_handoff_reason(run, events),
+        }
+
     def persist(self, run_id: str) -> None:
         try:
-            run = self._run_store.get_run(run_id)
-            events = self._run_store.list_events(run_id)
-            if run is None:
+            metrics = self.collect_run_metrics(run_id)
+            if metrics is None:
                 return
-            self._run_store.update_run_metrics(
-                run_id,
-                runtime_version=RUNTIME_VERSION,
-                trace_id=run_id,
-                model_name=_runtime_model_name(self._settings),
-                decision_provider=_runtime_decision_provider(self._settings),
-                step_count=_metric_step_count(events),
-                tool_call_count=len(_events_by_type(events, "tool_call")),
-                latency_ms=_latency_ms(run.get("created_at"), run.get("updated_at")),
-                error_type=_metric_error_type(run, events),
-                approval_state=_metric_approval_state(events),
-                retrieval_count=len(_events_by_type(events, "knowledge_context")),
-                token_usage=_metric_token_usage(run, events, self._settings),
-                cost_estimate=_metric_cost_estimate(run, events, self._settings),
-                handoff_reason=_metric_handoff_reason(run, events),
-            )
+            self._run_store.update_run_metrics(run_id, **metrics)
         except Exception as exc:
             logger.warning(f"Failed to persist agent run metrics for {run_id}: {exc}")
 
@@ -103,6 +108,10 @@ def _metric_token_usage(
     AgentOps fields attributable without pretending to be vendor billing data.
     """
 
+    provider_usage = _provider_token_usage(events, settings)
+    if provider_usage is not None:
+        return provider_usage
+
     prompt_sources: list[Any] = [
         run.get("goal"),
         run.get("session_id"),
@@ -145,6 +154,10 @@ def _metric_cost_estimate(
     run: dict[str, Any], events: list[dict[str, Any]], settings: AppSettings
 ) -> dict[str, Any]:
     token_usage = _metric_token_usage(run, events, settings)
+    provider_cost = _provider_cost_estimate(events, token_usage, settings)
+    if provider_cost is not None:
+        return provider_cost
+
     tool_call_count = len(_events_by_type(events, "tool_call"))
     retrieval_count = len(_events_by_type(events, "knowledge_context"))
     return {
@@ -162,6 +175,67 @@ def _metric_cost_estimate(
             "retrievals": retrieval_count,
         },
     }
+
+
+def _provider_token_usage(
+    events: list[dict[str, Any]],
+    settings: AppSettings,
+) -> dict[str, Any] | None:
+    for event in reversed(events):
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        token_usage = payload.get("token_usage")
+        if not isinstance(token_usage, dict):
+            continue
+        prompt_tokens = _int_value(token_usage.get("prompt_tokens"))
+        completion_tokens = _int_value(token_usage.get("completion_tokens"))
+        tool_output_tokens = _int_value(token_usage.get("tool_output_tokens"))
+        total = _int_value(token_usage.get("total"))
+        if total == 0:
+            total = prompt_tokens + completion_tokens + tool_output_tokens
+        if total == 0:
+            continue
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "tool_output_tokens": tool_output_tokens,
+            "total": total,
+            "model": str(token_usage.get("model") or _runtime_model_name(settings)),
+            "source": str(token_usage.get("source") or "provider_usage"),
+        }
+    return None
+
+
+def _provider_cost_estimate(
+    events: list[dict[str, Any]],
+    token_usage: dict[str, Any],
+    settings: AppSettings,
+) -> dict[str, Any] | None:
+    for event in reversed(events):
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        cost_estimate = payload.get("cost_estimate")
+        if not isinstance(cost_estimate, dict):
+            continue
+        total_cost = _float_value(cost_estimate.get("total_cost"))
+        if total_cost == 0:
+            continue
+        tool_call_count = len(_events_by_type(events, "tool_call"))
+        retrieval_count = len(_events_by_type(events, "knowledge_context"))
+        return {
+            "currency": str(cost_estimate.get("currency") or "USD"),
+            "total_cost": total_cost,
+            "model": str(cost_estimate.get("model") or _runtime_model_name(settings)),
+            "source": str(cost_estimate.get("source") or "provider_usage"),
+            "components": {
+                "tokens": _int_value(token_usage.get("total")),
+                "tool_calls": tool_call_count,
+                "retrievals": retrieval_count,
+            },
+        }
+    return None
 
 
 def _estimate_tokens(value: Any) -> int:
@@ -186,6 +260,20 @@ def _estimate_agentops_cost(
     tool_cost = tool_call_count * 0.01
     retrieval_cost = retrieval_count * 0.002
     return round(token_cost + tool_cost + retrieval_cost, 6)
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _float_value(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _runtime_model_name(settings: AppSettings) -> str:

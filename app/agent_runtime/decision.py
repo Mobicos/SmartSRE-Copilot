@@ -500,14 +500,18 @@ class AgentDecisionRuntime:
         self._checkpoint_saver = checkpoint_saver
         self._compiled_graph: Any | None = None
         self._provider_fallback_events: list[dict[str, Any]] = []
+        self._last_token_usage: dict[str, Any] = _unavailable_token_usage()
+        self._last_cost_estimate: dict[str, Any] = _unavailable_cost_estimate()
 
     def decide_once(self, state: AgentDecisionState) -> AgentDecisionState:
         try:
             decision = self._provider.decide(state)
+            self._record_provider_metrics(self._provider)
         except Exception as exc:
             if self._fallback_provider is None:
                 raise
             decision = self._fallback_provider.decide(state)
+            self._record_provider_metrics(self._fallback_provider)
             self._provider_fallback_events.append(
                 {
                     "from_provider": _provider_name(self._provider),
@@ -517,6 +521,16 @@ class AgentDecisionRuntime:
                 }
             )
         return state.with_decision(decision)
+
+    def get_token_usage(self) -> dict[str, Any]:
+        return dict(self._last_token_usage)
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        return dict(self._last_cost_estimate)
+
+    def _record_provider_metrics(self, provider: DecisionProvider) -> None:
+        self._last_token_usage = provider.get_token_usage()
+        self._last_cost_estimate = provider.get_cost_estimate()
 
     def consume_provider_fallback_events(self) -> list[dict[str, Any]]:
         events = list(self._provider_fallback_events)
@@ -829,6 +843,14 @@ def _unavailable_token_usage() -> dict[str, Any]:
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "total": 0,
+        "source": "provider_usage_unavailable",
+    }
+
+
+def _unavailable_cost_estimate() -> dict[str, Any]:
+    return {
+        "currency": "USD",
+        "total_cost": 0.0,
         "source": "provider_usage_unavailable",
     }
 
