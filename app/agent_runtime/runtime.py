@@ -264,6 +264,7 @@ class AgentRuntime:
         synthesizer: ReportSynthesizer | None = None,
         knowledge_context_provider: KnowledgeContextProvider | None = None,
         decision_runtime: AgentDecisionRuntime | None = None,
+        intervention_bridge: Any | None = None,
     ) -> None:
         self._settings = settings or AppSettings.from_env()
         self._scene_store = _required_dependency(scene_store, "scene_store")
@@ -281,6 +282,7 @@ class AgentRuntime:
         self._evidence_assessor = EvidenceAssessor()
         self._knowledge_context_provider = knowledge_context_provider or KnowledgeContextProvider()
         self._decision_runtime = decision_runtime or AgentDecisionRuntime()
+        self._intervention_bridge = intervention_bridge
         self._trace_collector = TraceCollector()
         self._step_runner = StepRunner(self)
         self._approval_boundary = ApprovalGate(
@@ -440,6 +442,7 @@ class AgentRuntime:
                             deadline=deadline,
                         ),
                         evidence_assessor=self._evidence_assessor,
+                        intervention_bridge=self._intervention_bridge,
                     )
                     loop_result = loop.run(
                         decision_state,

@@ -24,6 +24,8 @@ from app.agent_runtime.trace_collector import TraceCollector, TraceSpan
 
 ToolExecutorCallback = Callable[[AgentDecision], Any]
 
+EVENT_HUMAN_HANDOFF = "human_handoff"
+
 TerminalAction = {"ask_approval", "final_report", "handoff"}
 
 
@@ -126,6 +128,9 @@ class BoundedReActLoop:
         tool_executor: ToolExecutorCallback | None = None,
         evidence_assessor: EvidenceAssessor | None = None,
         memory_retriever: Any | None = None,
+        intervention_bridge: Any | None = None,
+        max_low_confidence_steps: int | None = None,
+        low_confidence_threshold: float = 0.3,
         clock: Callable[[], float] | None = None,
     ) -> None:
         self._provider = provider or DeterministicDecisionProvider()
@@ -136,6 +141,9 @@ class BoundedReActLoop:
         self._tool_executor = tool_executor
         self._evidence_assessor = evidence_assessor
         self._memory_retriever = memory_retriever
+        self._intervention_bridge = intervention_bridge
+        self._max_low_confidence_steps = max_low_confidence_steps
+        self._low_confidence_threshold = low_confidence_threshold
         self._clock = clock or monotonic
         self._provider_fallback_events: list[dict[str, str]] = []
         self._last_decision_provider: DecisionProvider = self._provider
@@ -154,6 +162,7 @@ class BoundedReActLoop:
         steps: list[LoopStep] = []
         evidence_items: list[EvidenceItem] = []
         token_usage = 0
+        consecutive_low_confidence = 0
 
         for step_index in range(budget.max_steps):
             if self._clock() >= deadline:
@@ -164,6 +173,9 @@ class BoundedReActLoop:
                     token_usage,
                     "max_time_seconds_reached",
                 )
+
+            # --- intervention: inject_evidence / modify_goal before decide ---
+            current_state = self._apply_pending_interventions(current_state)
 
             current_state = _state_with_remaining_budget(
                 current_state,
@@ -184,6 +196,12 @@ class BoundedReActLoop:
                 if decision.selected_tool:
                     span.set_attribute("agent.tool_name", decision.selected_tool)
                 span.set_attribute("agent.evidence_quality", decision.evidence.quality)
+
+                # --- intervention: replace_tool_call after decide ---
+                decision = self._apply_replace_intervention(
+                    decision,
+                    run_id=current_state.run_id,
+                )
 
                 # --- act phase: execute tool if requested ---
                 if (
@@ -263,6 +281,21 @@ class BoundedReActLoop:
                     decision.action_type,
                 )
 
+            # --- low-confidence auto-handoff ---
+            if self._max_low_confidence_steps is not None:
+                if decision.confidence < self._low_confidence_threshold:
+                    consecutive_low_confidence += 1
+                else:
+                    consecutive_low_confidence = 0
+                if consecutive_low_confidence >= self._max_low_confidence_steps:
+                    return self._result(
+                        current_state,
+                        steps,
+                        evidence_items,
+                        token_usage,
+                        "low_confidence_handoff",
+                    )
+
         return self._result(
             current_state,
             steps,
@@ -301,6 +334,39 @@ class BoundedReActLoop:
         except Exception:
             pass
         return state
+
+    def _apply_pending_interventions(
+        self, state: AgentDecisionState,
+    ) -> AgentDecisionState:
+        """Apply inject_evidence and modify_goal interventions before the decide step."""
+        if self._intervention_bridge is None or not state.run_id:
+            return state
+        from app.agent_runtime.intervention import InterventionBridge, InterventionType
+
+        for iv in self._intervention_bridge.pending(state.run_id):
+            if iv.intervention_type == InterventionType.INJECT_EVIDENCE:
+                state = InterventionBridge.apply_injected_evidence(iv, state)
+                self._intervention_bridge.mark_applied(iv)
+            elif iv.intervention_type == InterventionType.MODIFY_GOAL:
+                state = InterventionBridge.apply_modify_goal(iv, state)
+                self._intervention_bridge.mark_applied(iv)
+        return state
+
+    def _apply_replace_intervention(
+        self,
+        decision: AgentDecision,
+        run_id: str | None = None,
+    ) -> AgentDecision:
+        """Apply replace_tool_call intervention after the decide step."""
+        if self._intervention_bridge is None or not run_id:
+            return decision
+        from app.agent_runtime.intervention import InterventionBridge, InterventionType
+
+        for iv in self._intervention_bridge.pending(run_id):
+            if iv.intervention_type == InterventionType.REPLACE_TOOL_CALL:
+                decision = InterventionBridge.apply_replace_decision(iv, decision)
+                self._intervention_bridge.mark_applied(iv)
+        return decision
 
     @staticmethod
     def _make_step(

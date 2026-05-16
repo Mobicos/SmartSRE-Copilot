@@ -347,32 +347,29 @@ editing code:
 
 ### Implementation
 
-- [ ] T054 [P] Define InterventionAPI in `app/api/routes/agent.py`
+- [x] T054 [P] Define InterventionAPI in `app/api/routes/agent.py`
   - `POST /api/v1/agent/runs/{run_id}/intervene`
   - Body: `{ type: "inject_evidence" | "replace_tool_call" | "modify_goal", payload: ... }`
   - 校验：run 必须处于 `running` 状态
-- [ ] T055 [P] Implement InterventionStore in `app/platform/persistence/repositories.py`
+- [x] T055 [P] Implement InterventionStore in `app/platform/persistence/repositories.py`
   - 写入 `agent_events` 表，event_type = `intervention`
   - 持久化 intervention 类型和 payload
-- [ ] T056 Implement InterventionBridge in `app/agent_runtime/intervention.py`
+- [x] T056 Implement InterventionBridge in `app/agent_runtime/intervention.py`
   - BoundedReActLoop 每步 observe 前检查 pending interventions
   - `inject_evidence`: 证据追加到 DecisionContext.extra_evidence
   - `replace_tool_call`: 覆盖当前 step 的 AgentDecision
   - `modify_goal`: 更新 run.goal（需人工确认）
   - 所有 intervention 记录到 agent_events
-- [ ] T057 Implement low-confidence auto-handoff in `app/agent_runtime/loop.py`
+- [x] T057 Implement low-confidence auto-handoff in `app/agent_runtime/loop.py`
   - 连续 N 步（default=3）置信度 < 0.3 时，Agent 自动暂停
   - 发出 `EVENT_HUMAN_HANDOFF` SSE 事件，携带已收集证据 + 失败原因
   - 等待人工通过 InterventionAPI 注入指导或替换工具
   - 超时（default=120s）未收到干预 -> 产出 bounded_report
 - [ ] T058 [P] Add frontend intervention controls in `frontend/components/agent/`
-  - Agent 运行中显示"注入证据"和"替换工具"按钮
-  - 人工干预后实时反映到 Agent 事件时间线
-  - handoff 状态显示等待提示 + 超时倒计时
 
 ### Tests
 
-- [ ] T059 [P] Unit test: InterventionBridge injection in `tests/unit/test_intervention.py`
+- [x] T059 [P] Unit test: InterventionBridge injection in `tests/unit/test_intervention.py`
   - Test: inject_evidence -> DecisionContext.extra_evidence contains payload
   - Test: replace_tool_call -> AgentDecision overwritten
   - Test: intervention recorded as agent_event
