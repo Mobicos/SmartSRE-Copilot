@@ -34,13 +34,40 @@ Workspace
   -> Scene
   -> Goal
   -> Tool Policy
-  -> Agent Runtime
-  -> Tool Call
-  -> Evidence
+  -> Agent Runtime (BoundedReActLoop)
+      -> observe (MemoryRetriever injects historical context)
+      -> decide (DeterministicDecisionProvider / QwenDecisionProvider)
+          -> InterventionBridge checks for human interventions
+      -> act (ToolExecutor with policy gate)
+      -> assess (EvidenceAssessor)
   -> Final Report
+  -> MemoryExtractor (persists conclusions to pgvector)
   -> Feedback
   -> Replayable Events
 ```
+
+### Proactive Monitoring
+
+`ProactiveMonitor` periodically probes service metrics via `MetricProvider`,
+deduplicates alerts with `AlertDeduplicator` (time-window suppression),
+and auto-triggers `AutoDiagnosisTrigger` to create an AgentRun on anomaly.
+
+### Cross-session Memory
+
+Conclusions from previous runs are embedded via DashScope text-embedding-v4
+and stored in `agent_memory` with pgvector HNSW indexing. On each new run,
+`MemoryRetriever` retrieves similar historical conclusions and injects them
+as context into the first loop step.
+
+### Collaborative Intervention
+
+`InterventionBridge` allows human operators to intervene during an agent run:
+- **inject_evidence**: append observation before the decide step
+- **replace_tool_call**: override decision after the decide step
+- **modify_goal**: update the run goal contract
+
+Low-confidence auto-handoff pauses the loop after N consecutive low-confidence
+decisions, emitting a `human_handoff` event for operator response.
 
 ## Development Direction
 
