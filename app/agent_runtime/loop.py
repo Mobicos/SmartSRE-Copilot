@@ -156,7 +156,10 @@ class BoundedReActLoop:
         for step_index in range(budget.max_steps):
             if self._clock() >= deadline:
                 return self._result(
-                    current_state, steps, evidence_items, token_usage,
+                    current_state,
+                    steps,
+                    evidence_items,
+                    token_usage,
                     "max_time_seconds_reached",
                 )
 
@@ -191,7 +194,10 @@ class BoundedReActLoop:
                     evidence_items.append(evidence_item)
                     assessment = self._assess(decision, evidence_item)
                     current_state = _add_tool_evidence(
-                        current_state, decision, assessment, evidence_item,
+                        current_state,
+                        decision,
+                        assessment,
+                        evidence_item,
                     )
                     span.set_attribute("agent.evidence_quality", assessment.quality)
                     if assessment.confidence > 0:
@@ -199,11 +205,18 @@ class BoundedReActLoop:
 
                     # approval_required → pause loop, let runtime handle
                     if getattr(tool_result, "status", "") == "approval_required":
-                        steps.append(self._make_step(
-                            step_index, decision, tool_result=tool_result,
-                        ))
+                        steps.append(
+                            self._make_step(
+                                step_index,
+                                decision,
+                                tool_result=tool_result,
+                            )
+                        )
                         return self._result(
-                            current_state, steps, evidence_items, token_usage,
+                            current_state,
+                            steps,
+                            evidence_items,
+                            token_usage,
                             "approval_required",
                         )
 
@@ -220,33 +233,48 @@ class BoundedReActLoop:
 
             if budget.max_tokens is not None and token_usage > budget.max_tokens:
                 return self._result(
-                    current_state, steps, evidence_items, token_usage,
+                    current_state,
+                    steps,
+                    evidence_items,
+                    token_usage,
                     "max_tokens_reached",
                 )
 
             current_state = current_state.with_decision(decision)
-            steps.append(self._make_step(
-                step_index, decision, tool_result=tool_result,
-                token_usage=step_tokens,
-                token_usage_detail=token_usage_detail,
-                cost_estimate=cost_estimate,
-            ))
+            steps.append(
+                self._make_step(
+                    step_index,
+                    decision,
+                    tool_result=tool_result,
+                    token_usage=step_tokens,
+                    token_usage_detail=token_usage_detail,
+                    cost_estimate=cost_estimate,
+                )
+            )
 
             if decision.action_type in TerminalAction:
                 return self._result(
-                    current_state, steps, evidence_items, token_usage,
+                    current_state,
+                    steps,
+                    evidence_items,
+                    token_usage,
                     decision.action_type,
                 )
 
         return self._result(
-            current_state, steps, evidence_items, token_usage,
+            current_state,
+            steps,
+            evidence_items,
+            token_usage,
             "max_steps_reached",
         )
 
     # -- helpers ---------------------------------------------------------------
 
     def _assess(
-        self, decision: AgentDecision, evidence_item: EvidenceItem,
+        self,
+        decision: AgentDecision,
+        evidence_item: EvidenceItem,
     ) -> EvidenceAssessment:
         """Assess tool evidence, preferring the injected assessor."""
         if self._evidence_assessor is not None:
@@ -526,8 +554,10 @@ def _add_tool_evidence(
     else:
         consecutive_empty = 0
 
-    return state.model_copy(update={
-        "executed_tools": executed,
-        "evidence": evidence,
-        "consecutive_empty_evidence": consecutive_empty,
-    })
+    return state.model_copy(
+        update={
+            "executed_tools": executed,
+            "evidence": evidence,
+            "consecutive_empty_evidence": consecutive_empty,
+        }
+    )

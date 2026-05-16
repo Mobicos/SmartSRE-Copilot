@@ -156,10 +156,12 @@ class _LoopRecoveryManager:
         consecutive_failures: int = 0,
         tool_available: bool = True,
     ) -> RecoveryPlan:
-        self.calls.append({
-            "evidence_quality": evidence_quality,
-            "consecutive_failures": consecutive_failures,
-        })
+        self.calls.append(
+            {
+                "evidence_quality": evidence_quality,
+                "consecutive_failures": consecutive_failures,
+            }
+        )
         if consecutive_failures >= 3:
             return RecoveryPlan(
                 action="downgrade_report",
@@ -292,11 +294,15 @@ def test_loop_handles_mixed_tool_results():
         call_count += 1
         if call_count == 1:
             return ToolExecutionResult(
-                tool_name="SearchLog", status="success", arguments={},
+                tool_name="SearchLog",
+                status="success",
+                arguments={},
                 output="error logs found: OOM killer invoked",
             )
         return ToolExecutionResult(
-            tool_name="SearchLog", status="error", arguments={},
+            tool_name="SearchLog",
+            status="error",
+            arguments={},
             error="connection refused",
         )
 
