@@ -20,6 +20,7 @@ from app.agent_runtime.context import KnowledgeContextProvider
 from app.agent_runtime.decision import (
     AgentDecision,
     AgentDecisionRuntime,
+    EvidenceAssessment,
     FinalReportContract,
     Priority,
     RecoveryDecision,
@@ -645,6 +646,67 @@ class AgentRuntime:
                 deadline.ensure_available()
 
             deadline.ensure_available()
+            if decision_runtime_enabled and len(state.evidence) > 1:
+                aggregate_assessment, aggregate_handoff_reason = _aggregate_runtime_evidence(
+                    self._evidence_assessor,
+                    state.evidence,
+                )
+                if aggregate_assessment.quality == "conflicting":
+                    recovery_plan = self._failure_handler.choose_strategy(
+                        evidence_quality=aggregate_assessment.quality,
+                        consecutive_failures=1,
+                        tool_available=False,
+                    )
+                    reason = recovery_plan.reason or aggregate_handoff_reason
+                    recovery = RecoveryDecision(
+                        required=True,
+                        reason=reason,
+                        next_action="handoff",
+                    )
+                    recovery_payload = recovery.model_dump(mode="json")
+                    recovery_payload["recovery_action"] = recovery_plan.action
+                    yield self._record_event(
+                        run_id,
+                        event_type="recovery",
+                        stage="recover",
+                        message=f"需要恢复：{reason}",
+                        payload=recovery_payload,
+                    )
+                    report_contract = _evidence_handoff_contract(
+                        assessment=aggregate_assessment,
+                        reason=reason,
+                    )
+                    final_report = _handoff_report(goal, report_contract)
+                    self._run_store.update_run(
+                        run_id,
+                        status="handoff_required",
+                        final_report=final_report,
+                        error_message=reason,
+                    )
+                    self._persist_run_memory(
+                        runtime_context,
+                        final_report,
+                        conclusion_type="handoff",
+                        confidence=0.3,
+                        metadata={"handoff_reason": reason},
+                    )
+                    yield self._record_event(
+                        run_id,
+                        event_type="handoff",
+                        stage="handoff",
+                        message="Agent 运行需要人工交接",
+                        payload=report_contract.to_event_payload(),
+                    )
+                    self._persist_run_metrics(run_id)
+                    yield AgentRuntimeEvent(
+                        type="handoff",
+                        stage="handoff",
+                        run_id=run_id,
+                        status="handoff_required",
+                        final_report=final_report,
+                    )
+                    return
+
             if decision_runtime_enabled and skipped_tool_names and not strong_evidence_found:
                 recovery = RecoveryDecision(
                     required=True,
@@ -935,6 +997,35 @@ def _handoff_report(goal: str, report: FinalReportContract) -> str:
     if report.recommendations:
         lines.extend(["", "## 建议", *[f"- {item}" for item in report.recommendations]])
     return "\n".join(lines)
+
+
+def _aggregate_runtime_evidence(
+    assessor: EvidenceAssessor,
+    evidence_items: list[EvidenceItem],
+) -> tuple[EvidenceAssessment, str]:
+    assessment = assessor.assess_many(evidence_items)
+    return assessment, assessor.handoff_reason(assessment)
+
+
+def _evidence_handoff_contract(
+    *,
+    assessment: EvidenceAssessment,
+    reason: str,
+) -> FinalReportContract:
+    return FinalReportContract(
+        summary="证据存在冲突或不足以得出安全的自主结论，因此运行交由人工处理。",
+        verified_facts=[],
+        inferences=[
+            "当前工具结果未提供一致的经验证据来确认根因。",
+        ],
+        recommendations=[
+            "请运维人员检查引用的工具输出，补充验证证据后再恢复运行。",
+        ],
+        citations=assessment.citations,
+        confidence=assessment.confidence,
+        handoff_required=True,
+        handoff_reason=reason,
+    )
 
 
 def _memory_excerpt(text: str, *, limit: int = 2000) -> str:

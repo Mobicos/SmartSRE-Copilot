@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.agent_runtime.evidence import EvidenceAssessor
+from app.agent_runtime.runtime import _aggregate_runtime_evidence
 from app.agent_runtime.state import EvidenceItem
 
 
@@ -46,3 +47,24 @@ def test_evidence_assessor_detects_conflicting_root_causes():
         "SearchLog",
         "SearchMetric",
     }
+
+
+def test_runtime_evidence_aggregation_returns_handoff_reason_for_conflicts():
+    assessment, handoff_reason = _aggregate_runtime_evidence(
+        EvidenceAssessor(),
+        [
+            EvidenceItem(
+                tool_name="SearchLog",
+                status="success",
+                output={"root_cause": "database saturation"},
+            ),
+            EvidenceItem(
+                tool_name="SearchMetric",
+                status="success",
+                output={"root_cause": "cache miss storm"},
+            ),
+        ],
+    )
+
+    assert assessment.quality == "conflicting"
+    assert handoff_reason == "conflicting_evidence"

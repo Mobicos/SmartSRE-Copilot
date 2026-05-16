@@ -78,11 +78,11 @@ editing code:
   - Call ToolExecutor.execute(decision)
   - Apply step_timeout (default 30s)
   - Timeout -> tool_failure event -> recovery
-- [ ] T008 Implement assess phase (EvidenceAssessment) in `app/agent_runtime/evidence.py`
+- [x] T008 Implement assess phase (EvidenceAssessment) in `app/agent_runtime/evidence.py`
   - Assess tool output quality: strong/moderate/weak/insufficient/conflict/error
   - Evidence conflict detection (two tools contradict)
   - Status: strong/partial/weak/empty/conflicting/error classification exists;
-    runtime loop aggregation is pending
+    runtime final-report path checks aggregated conflicts
 - [ ] T009 Implement final_report phase in `app/agent_runtime/loop.py`
   - Call Synthesizer.synthesize(evidence_list)
   - Produce FinalReportContract (verified_facts + inferences)
