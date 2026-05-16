@@ -121,11 +121,11 @@ editing code:
   - `decide(context: DecisionContext) -> AgentDecision`
   - `get_token_usage() -> TokenUsage`
   - `get_cost_estimate() -> float`
-- [ ] T015 Refactor DeterministicDecisionProvider in `app/agent_runtime/decision.py`
+- [x] T015 Refactor DeterministicDecisionProvider in `app/agent_runtime/decision.py`
   - Implement DecisionProvider protocol
   - Return TokenUsage(0, 0) (no LLM call)
   - Status: deterministic provider now implements the port with zero token/cost metrics
-- [ ] T016 Refactor QwenDecisionProvider in `app/agent_runtime/decision.py`
+- [x] T016 Refactor QwenDecisionProvider in `app/agent_runtime/decision.py`
   - Implement DecisionProvider protocol
   - Call LLM, return real TokenUsage
   - Record reasoning_summary

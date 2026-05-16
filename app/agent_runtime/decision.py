@@ -319,6 +319,29 @@ class QwenDecisionProvider:
     def __init__(self, invoke_json: Callable[[AgentDecisionState], str]) -> None:
         self._invoke_json = invoke_json
 
+    def get_token_usage(self) -> dict[str, Any]:
+        if hasattr(self._invoke_json, "get_token_usage"):
+            usage = self._invoke_json.get_token_usage()
+            if isinstance(usage, dict):
+                return usage
+        return {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total": 0,
+            "source": "provider_usage_unavailable",
+        }
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        if hasattr(self._invoke_json, "get_cost_estimate"):
+            cost = self._invoke_json.get_cost_estimate()
+            if isinstance(cost, dict):
+                return cost
+        return {
+            "currency": "USD",
+            "total_cost": 0.0,
+            "source": "provider_usage_unavailable",
+        }
+
     def decide(self, state: AgentDecisionState) -> AgentDecision:
         raw = self._invoke_json(state)
         try:
@@ -376,6 +399,7 @@ class LangChainQwenDecisionInvoker:
 
     def __init__(self, chat_model: Any) -> None:
         self._chat_model = chat_model
+        self._last_token_usage: dict[str, Any] = _unavailable_token_usage()
 
     def __call__(self, state: AgentDecisionState) -> str:
         messages = [
@@ -393,6 +417,7 @@ class LangChainQwenDecisionInvoker:
             },
         ]
         response = self._chat_model.invoke(messages)
+        self._last_token_usage = _extract_response_token_usage(response)
         content = getattr(response, "content", response)
         if isinstance(content, list):
             parts = [
@@ -401,6 +426,26 @@ class LangChainQwenDecisionInvoker:
             ]
             return "".join(parts)
         return str(content)
+
+    def get_token_usage(self) -> dict[str, Any]:
+        return self._last_token_usage
+
+    def get_cost_estimate(self) -> dict[str, Any]:
+        token_total = int(self._last_token_usage.get("total") or 0)
+        if token_total <= 0:
+            return {
+                "currency": "USD",
+                "total_cost": 0.0,
+                "source": "provider_usage_unavailable",
+            }
+        return {
+            "currency": "USD",
+            "total_cost": round(token_total * 0.000002, 6),
+            "source": "heuristic_from_provider_tokens",
+            "components": {
+                "tokens": token_total,
+            },
+        }
 
 
 class AgentDecisionRuntime:
@@ -742,6 +787,49 @@ def _parse_strict_json(raw: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("Decision provider returned non-object JSON")
     return parsed
+
+
+def _unavailable_token_usage() -> dict[str, Any]:
+    return {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total": 0,
+        "source": "provider_usage_unavailable",
+    }
+
+
+def _extract_response_token_usage(response: Any) -> dict[str, Any]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, dict):
+        metadata = getattr(response, "response_metadata", None)
+        if isinstance(metadata, dict):
+            usage = metadata.get("token_usage")
+    if not isinstance(usage, dict):
+        return _unavailable_token_usage()
+
+    prompt_tokens = _usage_int(usage, "prompt_tokens", "input_tokens")
+    completion_tokens = _usage_int(usage, "completion_tokens", "output_tokens")
+    total = _usage_int(usage, "total", "total_tokens")
+    if total <= 0:
+        total = prompt_tokens + completion_tokens
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total": total,
+        "source": "provider_usage",
+    }
+
+
+def _usage_int(usage: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = usage.get(key)
+        if value is None:
+            continue
+        try:
+            return max(int(value), 0)
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def _qwen_decision_prompt(state: AgentDecisionState) -> str:

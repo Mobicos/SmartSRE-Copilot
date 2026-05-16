@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from app.agent_runtime.decision import DeterministicDecisionProvider
+from app.agent_runtime.decision import (
+    DeterministicDecisionProvider,
+    LangChainQwenDecisionInvoker,
+    QwenDecisionProvider,
+    build_initial_decision_state,
+)
 from app.agent_runtime.ports import DecisionProvider
 
 
@@ -19,3 +24,83 @@ def test_deterministic_provider_implements_decision_provider_port():
         "total_cost": 0.0,
         "source": "deterministic_zero",
     }
+
+
+class _UsageAwareQwenInvoker:
+    def __call__(self, _state):
+        return (
+            '{"action_type":"final_report","reasoning_summary":"enough evidence","confidence":0.9}'
+        )
+
+    def get_token_usage(self):
+        return {
+            "prompt_tokens": 12,
+            "completion_tokens": 8,
+            "total": 20,
+            "source": "provider_usage",
+        }
+
+    def get_cost_estimate(self):
+        return {
+            "currency": "USD",
+            "total_cost": 0.0012,
+            "source": "provider_usage",
+        }
+
+
+def test_qwen_provider_implements_decision_provider_port():
+    provider = QwenDecisionProvider(_UsageAwareQwenInvoker())
+    state = build_initial_decision_state(
+        run_id="run-1",
+        goal="Diagnose latency",
+        workspace_id="workspace-1",
+        scene_id="scene-1",
+        available_tools=["SearchLog"],
+    )
+
+    decision = provider.decide(state)
+
+    assert isinstance(provider, DecisionProvider)
+    assert decision.action_type == "final_report"
+    assert provider.get_token_usage()["total"] == 20
+    assert provider.get_token_usage()["source"] == "provider_usage"
+    assert provider.get_cost_estimate()["total_cost"] == 0.0012
+
+
+class _FakeQwenResponse:
+    content = (
+        '{"action_type":"final_report","reasoning_summary":"enough evidence","confidence":0.9}'
+    )
+    usage_metadata = {
+        "input_tokens": 12,
+        "output_tokens": 8,
+        "total_tokens": 20,
+    }
+
+
+class _FakeQwenChatModel:
+    def invoke(self, _messages):
+        return _FakeQwenResponse()
+
+
+def test_langchain_qwen_invoker_exposes_provider_token_usage():
+    invoker = LangChainQwenDecisionInvoker(_FakeQwenChatModel())
+    provider = QwenDecisionProvider(invoker)
+    state = build_initial_decision_state(
+        run_id="run-1",
+        goal="Diagnose latency",
+        workspace_id="workspace-1",
+        scene_id="scene-1",
+        available_tools=["SearchLog"],
+    )
+
+    provider.decide(state)
+
+    assert provider.get_token_usage() == {
+        "prompt_tokens": 12,
+        "completion_tokens": 8,
+        "total": 20,
+        "source": "provider_usage",
+    }
+    assert provider.get_cost_estimate()["total_cost"] > 0
+    assert provider.get_cost_estimate()["source"] == "heuristic_from_provider_tokens"
