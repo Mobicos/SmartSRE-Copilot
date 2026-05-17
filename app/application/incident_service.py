@@ -93,6 +93,24 @@ class IncidentContextService:
     def update_status(self, incident_id: str, status: str, *, summary: str | None = None) -> None:
         self._incident_repo.update_incident_status(incident_id, status, summary=summary)
 
+    def add_link(
+        self,
+        *,
+        incident_id: str,
+        target_type: str,
+        target_id: str,
+        relationship: str = "related_to",
+    ) -> str:
+        return self._incident_repo.add_link(
+            incident_id=incident_id,
+            target_type=target_type,
+            target_id=target_id,
+            relationship=relationship,
+        )
+
+    def list_links(self, incident_id: str) -> list[dict[str, Any]]:
+        return self._incident_repo.list_links(incident_id)
+
 
 class IncidentTimelineService:
     """Reconstruct incident timeline from persisted agent events and links."""

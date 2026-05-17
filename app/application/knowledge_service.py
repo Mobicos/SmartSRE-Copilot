@@ -14,7 +14,19 @@ class EmbeddingProvider(Protocol):
 
 
 class _KnowledgeItemRepo(Protocol):
-    def create(self, **kwargs: Any) -> int: ...
+    def create(
+        self,
+        *,
+        knowledge_base_id: str,
+        item_type: str,
+        title: str,
+        content: str,
+        dedup_hash: str,
+        confidence: float = ...,
+        source_run_id: str | None = ...,
+        metadata: dict[str, Any] | None = ...,
+        created_by: str | None = ...,
+    ) -> int: ...
     def get(self, item_id: int) -> dict[str, Any] | None: ...
     def list_by_type(self, kb_id: str, item_type: str, *, status: str) -> list[dict[str, Any]]: ...
     def list_drafts(self, kb_id: str) -> list[dict[str, Any]]: ...
@@ -23,7 +35,14 @@ class _KnowledgeItemRepo(Protocol):
     ) -> None: ...
     def find_by_dedup_hash(self, kb_id: str, dedup_hash: str) -> dict[str, Any] | None: ...
     def count_by_type(self, kb_id: str) -> dict[str, int]: ...
-    def log_audit(self, **kwargs: Any) -> None: ...
+    def log_audit(
+        self,
+        *,
+        item_id: int,
+        action: str,
+        actor: str | None = ...,
+        details: dict[str, Any] | None = ...,
+    ) -> None: ...
 
 
 class _VectorSearch(Protocol):
@@ -162,11 +181,9 @@ class KnowledgeService:
 
         if item_type:
             items = self._repo.list_by_type(kb_id, item_type, status="published")
-        else:
-            items = self._repo.count_by_type(kb_id)
-            # Fallback: return empty when vector search unavailable
-            items = []
-        return items[:top_k]
+            return items[:top_k]
+        # Fallback: return empty when vector search unavailable and no type filter
+        return []
 
     def check_dedup(
         self,
@@ -212,7 +229,7 @@ class KnowledgeService:
         )
         if result["status"] == "created":
             self.publish_item(result["id"], published_by)
-        return result.get("id", 0)
+        return int(result.get("id", 0))
 
     def search_knowledge(
         self,

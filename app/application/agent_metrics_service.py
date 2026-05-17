@@ -155,7 +155,7 @@ class AgentMetricsService:
             return latencies[0] if latencies else None
         sorted_lat = sorted(latencies)
         p95_idx = min(math.ceil(len(sorted_lat) * 0.95) - 1, len(sorted_lat) - 1)
-        return sorted_lat[p95_idx]
+        return int(sorted_lat[p95_idx])
 
     def compute_knowledge_release_gate(
         self,

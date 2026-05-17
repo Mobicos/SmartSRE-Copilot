@@ -334,7 +334,8 @@ class AnalyticsFindingTable(SQLModel, table=True):
     title: str
     summary: str
     evidence_refs: dict[str, Any] = Field(
-        sa_column=sa.Column(sa.JSON, nullable=False, server_default=sa.text("'[]'::jsonb")),
+        default_factory=dict,
+        sa_column=sa.Column(sa.JSON, nullable=False),
     )
     status: str = Field(default="open")
     created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))

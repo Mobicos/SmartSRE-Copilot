@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.agent_runtime.skill_catalog import SkillCatalog
@@ -58,7 +59,7 @@ def list_knowledge_items(
 def create_knowledge_item(
     req: KnowledgeItemCreateRequest,
     service: KnowledgeService = Depends(get_knowledge_service),
-) -> dict[str, Any]:
+) -> JSONResponse:
     """Create a new knowledge item. Returns dedup_conflict if similar content exists."""
     result = service.create_item(
         kb_id=req.knowledge_base_id,
@@ -68,7 +69,7 @@ def create_knowledge_item(
         source_run_id=req.source_run_id,
         metadata=req.metadata,
     )
-    return json_response(result)
+    return json_response(status_code=200, content=result)
 
 
 @router.get("/drafts")
@@ -171,7 +172,7 @@ def get_skill(
 
     skill = catalog.get(skill_id)
     if skill is None:
-        return json_response({"error": "skill not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="skill not found")
     return asdict(skill)
 
 

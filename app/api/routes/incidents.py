@@ -13,6 +13,12 @@ from app.api.providers import (
     get_incident_context_service,
     get_incident_timeline_service,
 )
+from app.application.incident_service import (
+    AnalyticsService,
+    HandoffSummaryService,
+    IncidentContextService,
+    IncidentTimelineService,
+)
 
 router = APIRouter(prefix="/incidents", tags=["incidents"])
 
@@ -100,7 +106,7 @@ class AnalyticsFindingResponse(BaseModel):
 @router.post("/", response_model=IncidentResponse)
 def create_incident(
     body: IncidentCreateRequest,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> dict[str, Any]:
     result = svc.create_incident(
         workspace_id=body.workspace_id,
@@ -119,7 +125,7 @@ def list_incidents(
     workspace_id: str | None = None,
     status: str | None = None,
     limit: int = 50,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> list[dict[str, Any]]:
     return svc.list_incidents(workspace_id=workspace_id, status=status, limit=limit)
 
@@ -127,7 +133,7 @@ def list_incidents(
 @router.get("/{incident_id}", response_model=IncidentResponse)
 def get_incident(
     incident_id: str,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> dict[str, Any]:
     result = svc.get_incident(incident_id)
     if result is None:
@@ -139,7 +145,7 @@ def get_incident(
 def update_incident_status(
     incident_id: str,
     body: IncidentStatusUpdate,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> dict[str, str]:
     svc.update_status(incident_id, body.status, summary=body.summary)
     return {"status": "updated", "incident_id": incident_id}
@@ -154,9 +160,9 @@ def update_incident_status(
 def add_incident_link(
     incident_id: str,
     body: IncidentLinkRequest,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> dict[str, str]:
-    link_id = svc._incident_repo.add_link(
+    link_id = svc.add_link(
         incident_id=incident_id,
         target_type=body.target_type,
         target_id=body.target_id,
@@ -168,9 +174,9 @@ def add_incident_link(
 @router.get("/{incident_id}/links")
 def list_incident_links(
     incident_id: str,
-    svc: Any = Depends(get_incident_context_service),
+    svc: IncidentContextService = Depends(get_incident_context_service),
 ) -> list[dict[str, Any]]:
-    return svc._incident_repo.list_links(incident_id)
+    return svc.list_links(incident_id)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +187,7 @@ def list_incident_links(
 @router.get("/{incident_id}/timeline", response_model=list[TimelineEventResponse])
 def get_incident_timeline(
     incident_id: str,
-    svc: Any = Depends(get_incident_timeline_service),
+    svc: IncidentTimelineService = Depends(get_incident_timeline_service),
 ) -> list[dict[str, Any]]:
     return svc.build_timeline(incident_id)
 
@@ -195,7 +201,7 @@ def get_incident_timeline(
 def get_handoff_summary(
     run_id: str,
     incident_id: str | None = None,
-    svc: Any = Depends(get_handoff_summary_service),
+    svc: HandoffSummaryService = Depends(get_handoff_summary_service),
 ) -> dict[str, Any]:
     return svc.build_summary(run_id, incident_id=incident_id)
 
@@ -210,6 +216,6 @@ def list_analytics_findings(
     workspace_id: str | None = None,
     category: str | None = None,
     limit: int = 50,
-    svc: Any = Depends(get_analytics_service),
+    svc: AnalyticsService = Depends(get_analytics_service),
 ) -> list[dict[str, Any]]:
     return svc.list_findings(workspace_id=workspace_id, category=category, limit=limit)

@@ -62,10 +62,10 @@ class SemanticCache:
         if self._vector_search is not None:
             try:
                 results = self._vector_search.search_similar_documents(query, top_k=1)
-                if results and results[0].score >= self._threshold:  # type: ignore[union-attr]
+                if results and results[0].score >= self._threshold:
                     result_data = {
-                        "content": results[0].content,  # type: ignore[union-attr]
-                        "score": results[0].score,  # type: ignore[union-attr]
+                        "content": results[0].content,
+                        "score": results[0].score,
                     }
                     self._cache[cache_key] = (time.time(), result_data, [])
                     return CacheResult(

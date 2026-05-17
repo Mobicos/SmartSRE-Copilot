@@ -58,6 +58,7 @@ class KnowledgeItemRepository:
             db.add(item)
             db.commit()
             db.refresh(item)
+            assert item.id is not None
             return int(item.id)
 
     def get(self, item_id: int) -> dict[str, Any] | None:
