@@ -265,6 +265,8 @@ class AgentRuntime:
         knowledge_context_provider: KnowledgeContextProvider | None = None,
         decision_runtime: AgentDecisionRuntime | None = None,
         intervention_bridge: Any | None = None,
+        retrieval_pipeline: Any | None = None,
+        skill_loader: Any | None = None,
     ) -> None:
         self._settings = settings or AppSettings.from_env()
         self._scene_store = _required_dependency(scene_store, "scene_store")
@@ -283,6 +285,8 @@ class AgentRuntime:
         self._knowledge_context_provider = knowledge_context_provider or KnowledgeContextProvider()
         self._decision_runtime = decision_runtime or AgentDecisionRuntime()
         self._intervention_bridge = intervention_bridge
+        self._retrieval_pipeline = retrieval_pipeline
+        self._skill_loader = skill_loader
         self._trace_collector = TraceCollector()
         self._step_runner = StepRunner(self)
         self._approval_boundary = ApprovalGate(
@@ -410,6 +414,66 @@ class AgentRuntime:
                     payload={"memories": memories},
                 )
 
+            # --- V2.1: retrieve knowledge + skills for current goal ---
+            knowledge_citations: list[dict[str, Any]] = []
+            active_skills: list[dict[str, Any]] = []
+            retrieval_gate_payload: dict[str, Any] | None = None
+            if self._retrieval_pipeline is not None:
+                kb_ids = [
+                    str(kb.get("id", ""))
+                    for kb in knowledge_context.knowledge_bases
+                    if kb.get("id")
+                ]
+                kb_id = kb_ids[0] if kb_ids else ""
+                if kb_id:
+                    try:
+                        from app.agent_runtime.knowledge_types import RetrievalResult
+
+                        retrieval_result: RetrievalResult = self._retrieval_pipeline.retrieve(
+                            workspace_id=runtime_context.workspace_id,
+                            goal=goal,
+                            scene=scene,
+                            kb_id=kb_id,
+                        )
+                        knowledge_citations = retrieval_result.citations
+                        retrieval_gate_payload = {
+                            "allowed": retrieval_result.gate.allowed,
+                            "refused": retrieval_result.gate.refused,
+                            "best_score": retrieval_result.gate.best_score,
+                            "missing_evidence": retrieval_result.gate.missing_evidence,
+                            "latency_ms": retrieval_result.latency_ms,
+                        }
+                        if knowledge_citations:
+                            yield self._record_event(
+                                run_id,
+                                event_type="knowledge_citations",
+                                stage="context",
+                                message=f"检索到相关知识 {len(knowledge_citations)} 条。",
+                                payload={
+                                    "citations": knowledge_citations,
+                                    "gate": retrieval_gate_payload,
+                                },
+                            )
+                    except Exception:
+                        logger.debug("Knowledge retrieval failed, continuing without citations")
+
+            if self._skill_loader is not None:
+                try:
+                    matched_skills = self._skill_loader.get_for_scene(scene, goal)
+                    from dataclasses import asdict as _asdict
+
+                    active_skills = [_asdict(s) for s in matched_skills]
+                    if active_skills:
+                        yield self._record_event(
+                            run_id,
+                            event_type="skill_match",
+                            stage="context",
+                            message=f"匹配到技能 {len(active_skills)} 个。",
+                            payload={"skills": active_skills},
+                        )
+                except Exception:
+                    logger.debug("Skill loading failed, continuing without skills")
+
             selected_tool_names = self._planner.select_tool_names(scene)
             decision_runtime_enabled = _decision_runtime_enabled(scene)
             if decision_runtime_enabled:
@@ -431,6 +495,15 @@ class AgentRuntime:
                         remaining_seconds=max(deadline.remaining_seconds(), 0),
                     ),
                 )
+                # Inject knowledge/skill context into decision state
+                if knowledge_citations or active_skills or retrieval_gate_payload:
+                    decision_state = decision_state.model_copy(
+                        update={
+                            "knowledge_citations": knowledge_citations,
+                            "active_skills": active_skills,
+                            "retrieval_gate": retrieval_gate_payload,
+                        }
+                    )
                 if _bounded_react_loop_enabled(scene):
                     loop = BoundedReActLoop(
                         provider=DecisionRuntimeProviderAdapter(self._decision_runtime),

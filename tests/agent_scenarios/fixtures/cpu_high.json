@@ -1,0 +1,18 @@
+{
+  "fixture_id": "cpu-high-fixture",
+  "scenario_id": "cpu_high",
+  "title": "CPU 高利用率诊断 — 固定输出回放",
+  "goal": "诊断生产主机 CPU 饱和问题，定位根因进程或查询。",
+  "terminal_status": "completed",
+  "required_event_types": ["run_started", "tool_call", "tool_result", "final_report"],
+  "expected_tool_calls": [
+    {"tool_name": "GetMetrics", "arguments_subset": {"metric": "cpu_usage_percent"}},
+    {"tool_name": "GetProcessInfo", "arguments_subset": {}}
+  ],
+  "expected_signals": ["cpu", "java", "负载"],
+  "blocked_terms": ["root cause confirmed without evidence"],
+  "min_tool_calls": 2,
+  "max_tool_calls": 15,
+  "expected_handoff": false,
+  "expected_confidence_min": 0.5
+}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from typing import Any, Protocol
 
 
@@ -40,3 +40,26 @@ class TraceCollector:
             for key, value in (attributes or {}).items():
                 span.set_attribute(key, value)
             yield span
+
+    def gen_ai_span(
+        self,
+        name: str,
+        *,
+        model: str = "",
+        operation: str = "",
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        run_id: str = "",
+        **extra: Any,
+    ) -> AbstractContextManager[TraceSpan]:
+        """Create a span aligned with OpenTelemetry GenAI semantic conventions."""
+        attrs: dict[str, Any] = {
+            "gen_ai.operation.name": operation or name,
+            "gen_ai.request.model": model,
+            "gen_ai.response.model": model,
+            "gen_ai.usage.input_tokens": input_tokens,
+            "gen_ai.usage.output_tokens": output_tokens,
+            "agent.run_id": run_id,
+        }
+        attrs.update(extra)
+        return self.span(name, attributes=attrs)

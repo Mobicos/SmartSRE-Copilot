@@ -55,6 +55,15 @@ class AgentResumeService:
                 "tool_name": tool_name,
             }
 
+        run_status = str(run.get("status") or "")
+        if run_status == "cancelled":
+            return {
+                "status": "ignored",
+                "reason": "run_cancelled",
+                "run_id": run_id,
+                "tool_name": tool_name,
+            }
+
         audited_decision = self._latest_approval_decision(run_id, tool_name)
         if audited_decision.get("decision") != "approved":
             return {

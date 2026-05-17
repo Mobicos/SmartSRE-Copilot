@@ -267,6 +267,91 @@ class AppContainer:
         )
 
     @cached_property
+    def knowledge_service(self) -> Any:
+        from app.application.knowledge_service import KnowledgeService
+        from app.platform.persistence.repositories.knowledge_items import (
+            KnowledgeItemRepository,
+        )
+
+        return KnowledgeService(
+            item_repository=KnowledgeItemRepository(),
+            embedding_provider=self.embedding_service,
+            vector_search=self.vector_search_service,
+        )
+
+    @cached_property
+    def skill_catalog(self) -> Any:
+        from app.agent_runtime.skill_catalog import SkillCatalog
+
+        return SkillCatalog()
+
+    @cached_property
+    def retrieval_pipeline(self) -> Any:
+        from app.agent_runtime.retrieval.confidence_gate import ConfidenceGate
+        from app.agent_runtime.retrieval.pipeline import RetrievalPipeline
+        from app.agent_runtime.retrieval.query_rewriter import QueryRewriter
+        from app.agent_runtime.retrieval.reranker import Reranker
+        from app.agent_runtime.retrieval.scene_router import SceneRouter
+
+        return RetrievalPipeline(
+            rewriter=QueryRewriter(),
+            router=SceneRouter(),
+            knowledge_searcher=self.knowledge_service,
+            gate=ConfidenceGate(),
+            reranker=Reranker(enabled=False),
+        )
+
+    @cached_property
+    def skill_loader(self) -> Any:
+        from app.agent_runtime.skill_loader import SkillLoader
+
+        return SkillLoader(catalog=self.skill_catalog)
+
+    @cached_property
+    def incident_context_service(self) -> Any:
+        from app.application.incident_service import IncidentContextService
+        from app.platform.persistence.repositories.incidents import (
+            IncidentRepository,
+        )
+
+        return IncidentContextService(
+            incident_repository=IncidentRepository(),
+            agent_run_repository=agent_run_repository,
+        )
+
+    @cached_property
+    def incident_timeline_service(self) -> Any:
+        from app.application.incident_service import IncidentTimelineService
+        from app.platform.persistence.repositories.incidents import (
+            IncidentRepository,
+        )
+
+        return IncidentTimelineService(
+            incident_repository=IncidentRepository(),
+            agent_run_repository=agent_run_repository,
+        )
+
+    @cached_property
+    def handoff_summary_service(self) -> Any:
+        from app.application.incident_service import HandoffSummaryService
+
+        return HandoffSummaryService(agent_run_repository=agent_run_repository)
+
+    @cached_property
+    def analytics_service(self) -> Any:
+        from app.application.incident_service import AnalyticsService
+        from app.platform.persistence.repositories.incidents import (
+            AnalyticsRepository,
+            IncidentRepository,
+        )
+
+        return AnalyticsService(
+            analytics_repository=AnalyticsRepository(),
+            agent_run_repository=agent_run_repository,
+            incident_repository=IncidentRepository(),
+        )
+
+    @cached_property
     def native_agent_application_service(self) -> NativeAgentApplicationService:
         from app.application.native_agent_application_service import (
             NativeAgentApplicationService,
@@ -317,6 +402,14 @@ class AppContainer:
             "agent_resume_service",
             "scenario_regression_service",
             "agent_metrics_service",
+            "knowledge_service",
+            "skill_catalog",
+            "retrieval_pipeline",
+            "skill_loader",
+            "incident_context_service",
+            "incident_timeline_service",
+            "handoff_summary_service",
+            "analytics_service",
             "native_agent_application_service",
         ):
             self.__dict__.pop(name, None)
@@ -416,6 +509,30 @@ def get_native_agent_application_service() -> NativeAgentApplicationService:
 
 def get_intervention_bridge() -> Any:
     return get_app_container().runtime.intervention_bridge
+
+
+def get_knowledge_service() -> Any:
+    return get_app_container().knowledge_service
+
+
+def get_skill_catalog() -> Any:
+    return get_app_container().skill_catalog
+
+
+def get_incident_context_service() -> Any:
+    return get_app_container().incident_context_service
+
+
+def get_incident_timeline_service() -> Any:
+    return get_app_container().incident_timeline_service
+
+
+def get_handoff_summary_service() -> Any:
+    return get_app_container().handoff_summary_service
+
+
+def get_analytics_service() -> Any:
+    return get_app_container().analytics_service
 
 
 def initialize_services() -> None:

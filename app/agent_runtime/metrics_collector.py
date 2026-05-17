@@ -36,6 +36,7 @@ class MetricsCollector:
             "latency_ms": _latency_ms(run.get("created_at"), run.get("updated_at")),
             "error_type": _metric_error_type(run, events),
             "approval_state": _metric_approval_state(events),
+            "approval_wait_time_ms": _metric_approval_wait_time_ms(events),
             "retrieval_count": len(_events_by_type(events, "knowledge_context")),
             "token_usage": _metric_token_usage(run, events, self._settings),
             "cost_estimate": _metric_cost_estimate(run, events, self._settings),
@@ -45,6 +46,9 @@ class MetricsCollector:
             "duplicate_tool_call_count": _metric_duplicate_tool_call_count(events),
             "step_latencies": _metric_step_latencies(events),
             "regression_score": None,
+            "faq_hit_count": _metric_faq_hits(events),
+            "knowledge_citation_count": _metric_knowledge_citations(events),
+            "retrieval_refused": _metric_retrieval_refused(events),
         }
 
     def persist(self, run_id: str) -> None:
@@ -88,6 +92,29 @@ def _metric_approval_state(events: list[dict[str, Any]]) -> str:
         if payload.get("execution_status") == "approval_required":
             return "required"
     return "not_required"
+
+
+def _metric_approval_wait_time_ms(events: list[dict[str, Any]]) -> int | None:
+    approval_required_at: str | None = None
+    approval_decision_at: str | None = None
+    for event in events:
+        etype = event.get("type")
+        timestamp = event.get("created_at") or event.get("timestamp")
+        if etype == "approval_required" and timestamp:
+            approval_required_at = str(timestamp)
+        if etype == "approval_decision" and timestamp:
+            approval_decision_at = str(timestamp)
+    if not approval_required_at or not approval_decision_at:
+        return None
+    try:
+        from datetime import datetime
+
+        t_required = datetime.fromisoformat(approval_required_at.replace("Z", "+00:00"))
+        t_decision = datetime.fromisoformat(approval_decision_at.replace("Z", "+00:00"))
+        delta = t_decision - t_required
+        return max(int(delta.total_seconds() * 1000), 0)
+    except (ValueError, TypeError, OSError):
+        return None
 
 
 def _metric_error_type(run: dict[str, Any], events: list[dict[str, Any]]) -> str | None:
@@ -427,3 +454,35 @@ def _latency_ms(created_at: Any, updated_at: Any) -> int | None:
         return int((updated_at - created_at).total_seconds() * 1000)
     except AttributeError:
         return None
+
+
+def _metric_faq_hits(events: list[dict[str, Any]]) -> int:
+    count = 0
+    for event in events:
+        if event.get("type") == "knowledge_context":
+            payload = event.get("payload", {})
+            citations = payload.get("citations", [])
+            for cite in citations:
+                if cite.get("item_type") == "faq":
+                    count += 1
+    return count
+
+
+def _metric_knowledge_citations(events: list[dict[str, Any]]) -> int:
+    count = 0
+    for event in events:
+        if event.get("type") == "knowledge_context":
+            payload = event.get("payload", {})
+            count += len(payload.get("citations", []))
+    return count
+
+
+def _metric_retrieval_refused(events: list[dict[str, Any]]) -> int:
+    count = 0
+    for event in events:
+        if event.get("type") == "knowledge_context":
+            payload = event.get("payload", {})
+            gate = payload.get("gate", {})
+            if gate.get("refused", False):
+                count += 1
+    return count

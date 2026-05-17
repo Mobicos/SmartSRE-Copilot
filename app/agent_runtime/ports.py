@@ -107,3 +107,62 @@ class DecisionProvider(Protocol):
 
     def get_cost_estimate(self) -> dict[str, Any]:
         """Return provider cost estimate for the latest or deterministic decision."""
+
+
+@runtime_checkable
+class KnowledgeStore(Protocol):
+    """Persist and query knowledge items (FAQ, SOP, incidents, documents)."""
+
+    def search_knowledge(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        item_type: str | None = None,
+        top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return relevant knowledge items for a query."""
+
+    def create_knowledge_item(
+        self,
+        *,
+        knowledge_base_id: str,
+        item_type: str,
+        title: str,
+        content: str,
+        dedup_hash: str,
+        source_run_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Create a knowledge item and return its id."""
+
+    def count_by_type(self, knowledge_base_id: str) -> dict[str, int]:
+        """Return item counts grouped by type."""
+
+    def find_similar(
+        self,
+        *,
+        knowledge_base_id: str,
+        embedding: list[float],
+        threshold: float = 0.9,
+    ) -> list[dict[str, Any]]:
+        """Find knowledge items with similarity above threshold."""
+
+
+@runtime_checkable
+class SkillStore(Protocol):
+    """Persist and query skill manifests."""
+
+    def get_skill(self, skill_id: str) -> dict[str, Any] | None:
+        """Return a skill manifest by id."""
+
+    def list_active_skills(self) -> list[dict[str, Any]]:
+        """Return all active skill manifests."""
+
+    def match_skills(
+        self,
+        *,
+        scene: dict[str, Any],
+        goal: str,
+    ) -> list[dict[str, Any]]:
+        """Match skills whose trigger conditions fit the scene and goal."""

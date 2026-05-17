@@ -499,3 +499,158 @@ All 10 phases:
 - 8 golden scenarios passing
 
 **Estimated full effort**: 14-18 days
+
+---
+
+## Phase 11: AgentOps Metrics & Release Gate
+
+- [x] T061 Add 4 new metric functions to MetricsCollector
+- [x] T062 Add per-step timing to MetricsCollector
+- [x] T063 Alembic migration for new agent_runs columns
+- [x] T064 Update AgentRun table model
+- [x] T065 Update AgentRunRepository to persist new fields
+- [x] T066 Implement AgentMetricsService
+- [x] T067 Add /agent/metrics/release-gate endpoint
+- [x] T068 Register router + DI provider
+- [x] T069 Add Prometheus histograms
+- [x] T070 Wire Prometheus observation into persist()
+- [x] T071 Unit tests for MetricsCollector
+- [x] T072 Unit tests for AgentMetricsService
+- [x] T073 Frontend BFF route
+- [x] T074 Frontend AgentMetricsPanel
+- [x] T075 OpenAPI contract regeneration
+- [x] T076 CI gate verification
+
+**Checkpoint**: Release gate metrics operational (goal_completion, unnecessary_ratio, approval_override, P95 latency)
+
+---
+
+## Phase 12: Knowledge / Skills — SRE Experience as Loadable Capabilities
+
+**Purpose**: Turn accumulated SRE experience into loadable knowledge and skills that the agent retrieves, cites, and learns from. Close the Oncall learning loop.
+
+**Release Gate**:
+- FAQ knowledge ratio > 50%
+- Low-confidence retrieval forced-answer rate = 0% (100% refusal when below threshold)
+- Knowledge dedup mechanism usable (similarity > 0.9 triggers human comparison)
+- At least 1 scenario connected to dynamic tools
+
+### Batch 1: Knowledge Types + Skill Manifest
+
+- [x] T077 Alembic migration: knowledge_items, skill_manifests, knowledge_audit_log tables
+- [x] T078 Domain models: KnowledgeItem, SkillManifest, RetrievalScope, GateResult dataclasses
+- [x] T079 Table models: KnowledgeItemTable, SkillManifestTable, KnowledgeAuditLogTable
+- [x] T080 Repositories: KnowledgeItemRepository, SkillManifestRepository
+- [x] T081 Ports: KnowledgeStore, SkillStore Protocols
+- [x] T082 SkillCatalog: 7 built-in SRE skill manifests (cpu, memory, disk, slow, unavailable, deploy, queue)
+- [x] T083 KnowledgeService: CRUD + dedup hash + publish workflow
+- [x] T084 API routes: /knowledge/* + /skills/* + DI wiring
+- [x] T085 Unit tests: knowledge service, skill catalog (22 tests)
+
+### Batch 2: Retrieval Pipeline Upgrade
+
+- [x] T086 Query Rewriter: expand goal into 2–4 retrieval query variants
+- [x] T087 Scene Router: intent classification → scoped retrieval
+- [x] T088 Confidence Gate: enforce minimum quality threshold on results
+- [x] T089 Retrieval Pipeline: 5-stage assembly (rewrite → route → recall → rerank → gate)
+- [x] T090 Reranker: Cross-Encoder wrapper with graceful degradation
+- [x] T091 Semantic Cache: high-confidence FAQ/SOP answer caching
+- [x] T092 Wire pipeline into loop observe phase (context fields prepared)
+- [x] T093 Unit tests: query rewriter, scene router, confidence gate, reranker, cache, pipeline (20 tests)
+
+### Batch 3: Knowledge Learning Loop
+
+- [x] T094 Badcase Clustering Service: group feedback → FAQ candidates
+- [x] T095 Knowledge Publishing Workflow: promote_from_run, list_drafts, confirm/reject
+- [x] T096 Human Confirmation API: /confirm, /reject, /drafts, /badcase-clusters
+- [x] T097 Knowledge Audit Trail: knowledge_audit_log table + log_audit repository method
+- [x] T098 Interception Rate Metrics: faq_hit_count, knowledge_citation_count, retrieval_refused
+- [x] T099 Unit tests: badcase clustering, knowledge publishing (7 tests)
+
+### Batch 4: Skill Runtime Integration + Release Gate
+
+- [x] T100 Skill Loader: load all manifests into runtime cache
+- [x] T101 Wire skills into planner + decision context
+- [x] T102 Wire retrieval + skills into runtime (DI in AppContainer)
+- [x] T103 Dynamic tool registration from skill manifests
+- [x] T104 Prometheus metrics for knowledge/skills
+- [x] T105 Release Gate evaluation: compute_knowledge_release_gate()
+- [x] T106 Unit tests: skill loader, release gate (14 tests)
+
+**Checkpoint**: Knowledge retrieval pipeline operational, 7 built-in SRE skills loaded, learning loop wired, release gate metrics available
+
+---
+
+## Phase 13: Replay Fixtures + Eval Hardening + Release Gate Enhancements
+
+### Batch 5: Replay Fixtures
+
+- [x] T107 JSON fixture schema: ReplayFixture Pydantic model with terminal_status, expected_tool_calls, signals, blocked_terms
+- [x] T108 6 scenario fixtures: cpu_high, http_5xx_spike, slow_response, disk_full, deploy_regression, dependency_failure
+- [x] T109 Fixture loader: load_fixtures() and load_fixture_by_id() from tests/agent_scenarios/fixtures/
+- [x] T110 Fixture-backed replay runner: ReplayRunner with eval checks and score computation
+- [x] T111 Drift report: compute_drift() comparing expected vs actual event types, tool order, terminal status
+- [x] T112 Hard eval checks: tool order, budget compliance, terminal status, evidence quality, citations
+
+### Batch 6: Release Gate Enhancements
+
+- [x] T113 Typed release gate schema: ReleaseGateResult, KnowledgeGateResult Pydantic models
+- [x] T114 Handoff rate metric: _compute_handoff_rate() in AgentMetricsService
+- [x] T115 Approval wait time: _metric_approval_wait_time_ms() and _compute_approval_wait_times() with P50/P95
+- [x] T116 Prometheus metrics for knowledge/skills: knowledge_search, retrieval_confidence_gate, skill_match, faq_hit, dedup_conflict
+
+### Batch 7: OTel GenAI + Decision Validation
+
+- [x] T117 OTel GenAI semantic convention: gen_ai_span() on TraceCollector with gen_ai.* attributes
+- [x] T118 Decision validation fields: validation_status, validation_error on AgentDecision
+- [x] T119 Cancellation guard: blocked resume when run status is "cancelled"
+- [x] T120 Unit tests: replay fixtures (24 tests), release gate types, trace smoke, cancellation guard
+
+**Checkpoint**: Replay fixtures operational, 6 golden scenarios fixture-backed, hard eval checks enforced, release gate enhanced with handoff rate and approval wait time, OTel GenAI attributes available
+
+## Phase 14: Oncall Product Loop — Incidents, Timeline, Handoff, Analytics
+
+**Purpose**: Close the Oncall learning loop with incident lifecycle management, timeline reconstruction, handoff summaries, and analytics-driven improvement signals.
+
+- [x] T121 Alembic migration: incidents, incident_links, analytics_findings tables
+- [x] T122 Domain models: Incident, IncidentLink, IncidentTimelineEvent, HandoffSummary, AnalyticsFinding with enums
+- [x] T123 Table models: IncidentTable, IncidentLinkTable, AnalyticsFindingTable SQLModel classes
+- [x] T124 IncidentRepository: CRUD for incidents + links (create, get, list, update_status, add_link, list_links, find_links_by_target)
+- [x] T125 AnalyticsRepository: CRUD for analytics findings (create, list, update_status)
+- [x] T126 IncidentContextService: incident lifecycle management, run/feedback/knowledge linking
+- [x] T127 IncidentTimelineService: reconstruct timeline from agent_events + incident_links
+- [x] T128 HandoffSummaryService: structured summaries with evidence, tools, failure reasons, next actions
+- [x] T129 AnalyticsService: detect knowledge gaps, monitoring gaps, tool reliability issues, automation candidates
+- [x] T130 API routes: CRUD, links, timeline, handoff, analytics endpoints (Depends-based DI)
+- [x] T131 DI providers: AppContainer cached properties + free getter functions for all incident services
+- [x] T132 Unit tests: 18 tests covering all incident services (context, timeline, handoff, analytics, helpers)
+
+**Checkpoint**: Incident lifecycle fully functional — create, link runs, build timeline, generate handoff summaries, detect improvement analytics. All routes wired via Depends(). 18 tests passing.
+
+## Phase 15: Runtime Integration — Retrieval Pipeline + Skills Wiring
+
+**Purpose**: Wire the knowledge retrieval pipeline and skill system into the agent runtime so knowledge citations and skill guidance are available during every run.
+
+- [x] T133 AgentDecisionState fields: knowledge_citations, active_skills, retrieval_gate added to decision state
+- [x] T134 RetrievalPipeline + SkillLoader constructor params on AgentRuntime
+- [x] T135 Retrieval execution in _run_orchestration: retrieve knowledge citations after memory context, inject into decision_state
+- [x] T136 Skill loading in _run_orchestration: match skills to scene+goal, inject into decision_state
+- [x] T137 Dynamic tool registration: ToolCatalog.register_dynamic_tools() for skill manifest tools
+- [x] T138 Planner.apply_skill_context: extract recommended_tools from matched skills
+- [x] T139 KnowledgeService.search_knowledge adapter: pipeline-compatible search method
+- [x] T140 AppContainer DI: retrieval_pipeline + skill_loader cached properties, reset_for_testing entries
+- [x] T141 Unit tests: full verification — 862 tests passing, ruff clean
+
+**Checkpoint**: Knowledge retrieval pipeline and skill system fully wired into runtime. Citations and skill guidance available during every run. Dynamic tool registration from skill manifests functional. 862 tests passing.
+
+## Phase 16: US10 — Secure Tool Gateway Governance Fields
+
+**Purpose**: Add MCP server governance fields (credential_scope, server_id, transport, rate_limit) to the tool catalog and policy system.
+
+- [x] T142 ToolSchema fields: credential_scope, server_id, transport, rate_limit_rpm added
+- [x] T143 _tool_to_schema: populate new governance fields from tool attributes
+- [x] T144 _default_policy: include new governance fields in policy dict
+- [x] T145 Dynamic tool registration: register_dynamic_tools() with approval_required=True for external tools
+- [x] T146 Unit tests: full verification — 862 tests passing, ruff clean
+
+**Checkpoint**: Tool gateway governance fields complete. All tools carry provenance, credential scope, transport, and rate limit metadata. Dynamic tools from skills require approval by default. 862 tests passing.

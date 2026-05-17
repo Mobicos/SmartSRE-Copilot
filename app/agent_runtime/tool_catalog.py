@@ -28,6 +28,10 @@ class ToolSchema:
     data_boundary: str = "workspace"
     side_effect: str = "none"
     fallback_strategy: str = "handoff"
+    credential_scope: str = "workspace"
+    server_id: str | None = None
+    transport: str = "local"
+    rate_limit_rpm: int | None = None
     raw_tool: Any = field(default=None, repr=False, compare=False)
 
     @property
@@ -51,6 +55,9 @@ class ToolSchema:
 class ToolCatalog:
     """Discover local and MCP tools through the existing registry."""
 
+    def __init__(self) -> None:
+        self._dynamic_tools: dict[str, ToolSchema] = {}
+
     async def get_tools(
         self,
         scope: ToolScope,
@@ -58,7 +65,29 @@ class ToolCatalog:
         force_refresh: bool = False,
     ) -> list[ToolSchema]:
         tools = await tool_registry.get_tools(scope, force_refresh=force_refresh)  # type: ignore[attr-defined]
-        return [_tool_to_schema(tool, scope=str(scope)) for tool in tools]
+        schemas = [_tool_to_schema(tool, scope=str(scope)) for tool in tools]
+        schemas.extend(self._dynamic_tools.values())
+        return schemas
+
+    def register_dynamic_tools(self, tool_names: list[str]) -> list[str]:
+        """Register tools from skill manifests that aren't already in the catalog.
+
+        Returns names of tools that were registered (skips already-known tools).
+        """
+        registered: list[str] = []
+        for name in tool_names:
+            if name in self._dynamic_tools:
+                continue
+            self._dynamic_tools[name] = ToolSchema(
+                name=name,
+                description=f"Dynamic tool from skill manifest: {name}",
+                scope="diagnosis",
+                risk_level="medium",
+                approval_required=True,
+                side_effect="external_api",
+            )
+            registered.append(name)
+        return registered
 
 
 def _tool_to_schema(tool: Any, *, scope: str) -> ToolSchema:
@@ -82,6 +111,10 @@ def _tool_to_schema(tool: Any, *, scope: str) -> ToolSchema:
         data_boundary=str(getattr(tool, "data_boundary", "workspace") or "workspace"),
         side_effect=side_effect,
         fallback_strategy=str(getattr(tool, "fallback_strategy", "handoff") or "handoff"),
+        credential_scope=str(getattr(tool, "credential_scope", "workspace") or "workspace"),
+        server_id=getattr(tool, "server_id", None),
+        transport=str(getattr(tool, "transport", "local") or "local"),
+        rate_limit_rpm=getattr(tool, "rate_limit_rpm", None),
         raw_tool=tool,
     )
 

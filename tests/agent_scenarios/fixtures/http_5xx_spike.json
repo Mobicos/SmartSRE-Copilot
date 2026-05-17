@@ -1,0 +1,18 @@
+{
+  "fixture_id": "http-5xx-spike-fixture",
+  "scenario_id": "http_5xx_spike",
+  "title": "HTTP 5xx 激增诊断 — 固定输出回放",
+  "goal": "诊断 API 网关 HTTP 5xx 响应突然增加的问题。",
+  "terminal_status": "completed",
+  "required_event_types": ["run_started", "tool_call", "tool_result", "final_report"],
+  "expected_tool_calls": [
+    {"tool_name": "GetMetrics", "arguments_subset": {"metric": "http_5xx_count"}},
+    {"tool_name": "SearchLog", "arguments_subset": {}}
+  ],
+  "expected_signals": ["5xx", "error", "evidence"],
+  "blocked_terms": ["root cause confirmed without evidence"],
+  "min_tool_calls": 2,
+  "max_tool_calls": 15,
+  "expected_handoff": false,
+  "expected_confidence_min": 0.5
+}
