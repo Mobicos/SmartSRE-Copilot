@@ -199,3 +199,141 @@ class AgentMemory(SQLModel, table=True):
     )
     created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
     updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+
+
+class KnowledgeItemTable(SQLModel, table=True):
+    __tablename__ = "knowledge_items"
+
+    id: int | None = Field(
+        sa_column=sa.Column(sa.BigInteger, primary_key=True, autoincrement=True), default=None
+    )
+    knowledge_base_id: str = Field(
+        foreign_key="knowledge_bases.knowledge_base_id", ondelete="CASCADE"
+    )
+    item_type: str
+    title: str
+    content: str
+    confidence: float = Field(default=0.5)
+    source_run_id: str | None = Field(
+        sa_column=sa.Column(
+            sa.Text, sa.ForeignKey("agent_runs.run_id", ondelete="SET NULL"), nullable=True
+        )
+    )
+    status: str = Field(default="draft")
+    dedup_hash: str | None = None
+    item_metadata: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=sa.Column("metadata", sa.JSON, nullable=True),
+    )
+    created_by: str | None = None
+    published_by: str | None = None
+    published_at: datetime | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=True),
+    )
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+
+
+class SkillManifestTable(SQLModel, table=True):
+    __tablename__ = "skill_manifests"
+
+    id: int | None = Field(
+        sa_column=sa.Column(sa.BigInteger, primary_key=True, autoincrement=True), default=None
+    )
+    skill_id: str = Field(unique=True)
+    name: str
+    description: str | None = None
+    trigger_conditions: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    diagnostic_steps: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    recommended_tools: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    evidence_requirements: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    risk_warnings: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False),
+    )
+    report_template: str | None = None
+    input_schema: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    output_schema: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    degradation_strategy: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=sa.Column(sa.JSON, nullable=True),
+    )
+    version: str = Field(default="1.0.0")
+    status: str = Field(default="active")
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+
+
+class KnowledgeAuditLogTable(SQLModel, table=True):
+    __tablename__ = "knowledge_audit_log"
+    __table_args__ = (sa.Index("idx_kal_item", "item_id", "created_at"),)
+
+    id: int | None = Field(
+        sa_column=sa.Column(sa.BigInteger, primary_key=True, autoincrement=True), default=None
+    )
+    item_id: int = Field(foreign_key="knowledge_items.id", ondelete="CASCADE")
+    action: str
+    actor: str | None = None
+    audit_details: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=sa.Column("details", sa.JSON, nullable=True),
+    )
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+
+
+class IncidentTable(SQLModel, table=True):
+    __tablename__ = "incidents"
+
+    incident_id: str = Field(primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.workspace_id", ondelete="CASCADE")
+    title: str
+    severity: str = Field(default="P2")
+    service_name: str | None = None
+    owner: str | None = None
+    status: str = Field(default="open")
+    source: str = Field(default="manual")
+    summary: str | None = None
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+    resolved_at: datetime | None = Field(default=None, sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=True))
+
+
+class IncidentLinkTable(SQLModel, table=True):
+    __tablename__ = "incident_links"
+
+    link_id: str = Field(primary_key=True)
+    incident_id: str = Field(foreign_key="incidents.incident_id", ondelete="CASCADE")
+    target_type: str
+    target_id: str
+    relationship: str
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+
+
+class AnalyticsFindingTable(SQLModel, table=True):
+    __tablename__ = "analytics_findings"
+
+    finding_id: str = Field(primary_key=True)
+    workspace_id: str = Field(foreign_key="workspaces.workspace_id", ondelete="CASCADE")
+    category: str
+    title: str
+    summary: str
+    evidence_refs: dict[str, Any] = Field(
+        sa_column=sa.Column(sa.JSON, nullable=False, server_default=sa.text("'[]'::jsonb")),
+    )
+    status: str = Field(default="open")
+    created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
+    updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
