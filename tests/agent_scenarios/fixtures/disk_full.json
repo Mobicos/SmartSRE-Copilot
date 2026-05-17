@@ -1,0 +1,18 @@
+{
+  "fixture_id": "disk-full-fixture",
+  "scenario_id": "disk_full",
+  "title": "磁盘满事故诊断 — 固定输出回放",
+  "goal": "诊断数据库节点磁盘空间耗尽问题，定位大文件或孤立文件。",
+  "terminal_status": "completed",
+  "required_event_types": ["run_started", "tool_call", "tool_result", "final_report"],
+  "expected_tool_calls": [
+    {"tool_name": "GetMetrics", "arguments_subset": {"metric": "disk_usage_percent"}},
+    {"tool_name": "GetProcessInfo", "arguments_subset": {}}
+  ],
+  "expected_signals": ["disk", "space", "evidence"],
+  "blocked_terms": ["root cause confirmed without evidence"],
+  "min_tool_calls": 2,
+  "max_tool_calls": 15,
+  "expected_handoff": false,
+  "expected_confidence_min": 0.5
+}

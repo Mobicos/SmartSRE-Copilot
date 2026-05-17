@@ -1,0 +1,18 @@
+{
+  "fixture_id": "deploy-regression-fixture",
+  "scenario_id": "deploy_regression",
+  "title": "部署回归诊断 — 固定输出回放",
+  "goal": "诊断新版本部署后出现的服务异常。",
+  "terminal_status": "completed",
+  "required_event_types": ["run_started", "tool_call", "tool_result", "final_report"],
+  "expected_tool_calls": [
+    {"tool_name": "GetMetrics", "arguments_subset": {"metric": "error_rate"}},
+    {"tool_name": "SearchLog", "arguments_subset": {}}
+  ],
+  "expected_signals": ["deploy", "regression", "evidence"],
+  "blocked_terms": ["root cause confirmed without evidence"],
+  "min_tool_calls": 2,
+  "max_tool_calls": 15,
+  "expected_handoff": false,
+  "expected_confidence_min": 0.5
+}
