@@ -23,7 +23,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
-COPY aiops-docs ./aiops-docs
 COPY mcp_servers ./mcp_servers
 RUN mkdir -p static logs uploads
 
