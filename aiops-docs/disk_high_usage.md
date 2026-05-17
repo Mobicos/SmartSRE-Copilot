@@ -338,6 +338,6 @@ apt-get clean  # Ubuntu
 - **紧急电话**: 400-xxx-xxxx
 
 ## 参考文档
-- [磁盘管理最佳实践](internal-docs/disk-management.md)
-- [日志管理规范](internal-docs/log-management.md)
-- [数据归档策略](internal-docs/data-archiving.md)
+- 磁盘管理最佳实践
+- 日志管理规范
+- 数据归档策略
