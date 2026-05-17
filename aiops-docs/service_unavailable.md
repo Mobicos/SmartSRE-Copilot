@@ -284,6 +284,6 @@
 - **1小时未恢复**: 启动最高级别应急响应
 
 ## 参考文档
-- [应急响应流程](internal-docs/emergency-response.md)
-- [故障处理手册](internal-docs/incident-handbook.md)
-- [高可用架构设计](internal-docs/ha-architecture.md)
+- 应急响应流程
+- 故障处理手册
+- 高可用架构设计

@@ -176,5 +176,5 @@ jstat -gc <pid> 1000
 - **紧急电话**: 400-xxx-xxxx
 
 ## 参考文档
-- [JVM内存管理最佳实践](internal-docs/jvm-memory-best-practices.md)
-- [内存泄漏排查指南](internal-docs/memory-leak-troubleshooting.md)
+- JVM内存管理最佳实践
+- 内存泄漏排查指南

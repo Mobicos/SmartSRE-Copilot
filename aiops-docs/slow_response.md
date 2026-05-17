@@ -252,6 +252,6 @@
 - **紧急电话**: 400-xxx-xxxx
 
 ## 参考文档
-- [性能优化最佳实践](internal-docs/performance-optimization.md)
-- [数据库优化指南](internal-docs/database-optimization.md)
-- [缓存使用规范](internal-docs/cache-best-practices.md)
+- 性能优化最佳实践
+- 数据库优化指南
+- 缓存使用规范
