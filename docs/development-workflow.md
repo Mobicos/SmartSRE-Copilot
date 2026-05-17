@@ -193,7 +193,32 @@ Do not merge when required checks are failing, pending, or skipped unexpectedly.
 Delete remote feature branches after merge unless they are intentional
 integration branches.
 
-## 8. AI Coding Agent Rules
+## 8. Common Make Targets
+
+```bash
+make up              # Start all services
+make down            # Stop all services
+make status          # Show service status
+make verify          # Full local quality gate (mirrors CI)
+make db-upgrade      # Run database migrations
+make test            # Run pytest
+make lint            # Run ruff check + format check
+make type-check      # Run mypy
+make security        # Run bandit security scan
+```
+
+## 9. Development Rules
+
+- Read `CONTRIBUTING.md` before opening a branch or PR.
+- Keep backend dependencies in `pyproject.toml`; commit `uv.lock`.
+- Keep frontend dependencies in `frontend/package.json`; commit
+  `frontend/pnpm-lock.yaml`.
+- Do not commit `.env`, `.venv/`, `uploads/`, `data/`, `volumes/`,
+  `frontend/node_modules/`, or `frontend/.next/`.
+- When backend API models change, update `frontend/lib/api-contracts.ts` or the
+  relevant BFF route adapter in the same change.
+
+## 10. AI Coding Agent Rules
 
 AI agents working in this repository must:
 
