@@ -2,7 +2,7 @@
 
 > 面向 SRE 的智能运维助手，支持知识库问答、AIOps 诊断和原生 Agent 工作台。
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](../README.md) | [简体中文](README.zh-CN.md)
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-green.svg)](https://fastapi.tiangolo.com/)

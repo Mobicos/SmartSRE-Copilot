@@ -3,7 +3,7 @@
 > AI-powered SRE assistant with knowledge-grounded chat, AIOps diagnosis, and
 > native agent workbench.
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | [简体中文](docs/README.zh-CN.md)
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-API-green.svg)](https://fastapi.tiangolo.com/)
