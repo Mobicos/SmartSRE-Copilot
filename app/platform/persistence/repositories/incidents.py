@@ -123,9 +123,7 @@ class IncidentRepository:
             rows = session.exec(stmt).all()
             return [_link_to_dict(r) for r in rows]
 
-    def find_links_by_target(
-        self, target_type: str, target_id: str
-    ) -> list[dict[str, Any]]:
+    def find_links_by_target(self, target_type: str, target_id: str) -> list[dict[str, Any]]:
         stmt = select(IncidentLinkTable).where(
             IncidentLinkTable.target_type == target_type,
             IncidentLinkTable.target_id == target_id,

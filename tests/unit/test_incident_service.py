@@ -52,7 +52,7 @@ class _FakeIncidentRepo:
             self._incidents[incident_id]["status"] = status
 
     def add_link(self, **kwargs: Any) -> str:
-        lid = f"il-{len(self._links)+1}"
+        lid = f"il-{len(self._links) + 1}"
         self._links.append({"link_id": lid, **kwargs})
         return lid
 
@@ -176,18 +176,46 @@ def test_update_incident_status():
 
 def test_build_timeline():
     run_events = [
-        {"id": 1, "type": "run_started", "message": "started", "payload": {}, "created_at": "2026-05-17T10:00:00Z"},
-        {"id": 2, "type": "tool_call", "message": "calling", "payload": {"tool_name": "GetMetrics"}, "created_at": "2026-05-17T10:00:01Z"},
-        {"id": 3, "type": "tool_result", "message": "done", "payload": {"tool_name": "GetMetrics", "status": "success"}, "created_at": "2026-05-17T10:00:02Z"},
-        {"id": 4, "type": "final_report", "message": "report", "payload": {}, "created_at": "2026-05-17T10:00:03Z"},
+        {
+            "id": 1,
+            "type": "run_started",
+            "message": "started",
+            "payload": {},
+            "created_at": "2026-05-17T10:00:00Z",
+        },
+        {
+            "id": 2,
+            "type": "tool_call",
+            "message": "calling",
+            "payload": {"tool_name": "GetMetrics"},
+            "created_at": "2026-05-17T10:00:01Z",
+        },
+        {
+            "id": 3,
+            "type": "tool_result",
+            "message": "done",
+            "payload": {"tool_name": "GetMetrics", "status": "success"},
+            "created_at": "2026-05-17T10:00:02Z",
+        },
+        {
+            "id": 4,
+            "type": "final_report",
+            "message": "report",
+            "payload": {},
+            "created_at": "2026-05-17T10:00:03Z",
+        },
     ]
     run_repo = _FakeRunRepo(
         runs=[{"run_id": "r1", "status": "completed"}],
         events_map={"r1": run_events},
     )
     inc_repo = _FakeIncidentRepo()
-    iid = inc_repo.create_incident(workspace_id="ws-1", title="test", severity="P2", source="manual")
-    inc_repo.add_link(incident_id=iid, target_type="agent_run", target_id="r1", relationship="diagnosed_by")
+    iid = inc_repo.create_incident(
+        workspace_id="ws-1", title="test", severity="P2", source="manual"
+    )
+    inc_repo.add_link(
+        incident_id=iid, target_type="agent_run", target_id="r1", relationship="diagnosed_by"
+    )
 
     svc = IncidentTimelineService(
         incident_repository=inc_repo,
@@ -202,8 +230,12 @@ def test_build_timeline():
 
 def test_find_incident_for_run():
     inc_repo = _FakeIncidentRepo()
-    iid = inc_repo.create_incident(workspace_id="ws-1", title="test", severity="P2", source="manual")
-    inc_repo.add_link(incident_id=iid, target_type="agent_run", target_id="r1", relationship="diagnosed_by")
+    iid = inc_repo.create_incident(
+        workspace_id="ws-1", title="test", severity="P2", source="manual"
+    )
+    inc_repo.add_link(
+        incident_id=iid, target_type="agent_run", target_id="r1", relationship="diagnosed_by"
+    )
     svc = IncidentTimelineService(
         incident_repository=inc_repo,
         agent_run_repository=_FakeRunRepo(),
@@ -219,13 +251,28 @@ def test_find_incident_for_run():
 
 def test_build_handoff_summary():
     run_events = [
-        {"type": "tool_call", "payload": {"tool_name": "GetMetrics", "arguments": {"metric": "cpu"}}},
-        {"type": "tool_result", "payload": {"tool_name": "GetMetrics", "status": "success", "quality": "partial"}},
-        {"type": "tool_result", "payload": {"tool_name": "SearchLog", "status": "error", "error": "timeout"}},
+        {
+            "type": "tool_call",
+            "payload": {"tool_name": "GetMetrics", "arguments": {"metric": "cpu"}},
+        },
+        {
+            "type": "tool_result",
+            "payload": {"tool_name": "GetMetrics", "status": "success", "quality": "partial"},
+        },
+        {
+            "type": "tool_result",
+            "payload": {"tool_name": "SearchLog", "status": "error", "error": "timeout"},
+        },
         {"type": "evidence_assessment", "payload": {"quality": "partial", "confidence": 0.4}},
     ]
     run_repo = _FakeRunRepo(
-        runs=[{"run_id": "r1", "status": "handoff_required", "handoff_reason": "insufficient_evidence"}],
+        runs=[
+            {
+                "run_id": "r1",
+                "status": "handoff_required",
+                "handoff_reason": "insufficient_evidence",
+            }
+        ],
         events_map={"r1": run_events},
     )
     svc = HandoffSummaryService(agent_run_repository=run_repo)
@@ -266,10 +313,7 @@ def test_analytics_detects_knowledge_gaps():
 
 
 def test_analytics_detects_tool_reliability():
-    runs = [
-        {"run_id": f"r{i}", "error_type": "timeout"}
-        for i in range(4)
-    ]
+    runs = [{"run_id": f"r{i}", "error_type": "timeout"} for i in range(4)]
     svc = AnalyticsService(
         analytics_repository=_FakeAnalyticsRepo(),
         agent_run_repository=_FakeRunRepo(runs=runs),
@@ -281,10 +325,7 @@ def test_analytics_detects_tool_reliability():
 
 
 def test_analytics_detects_automation_candidates():
-    runs = [
-        {"run_id": f"r{i}", "duplicate_tool_call_count": 5}
-        for i in range(3)
-    ]
+    runs = [{"run_id": f"r{i}", "duplicate_tool_call_count": 5} for i in range(3)]
     svc = AnalyticsService(
         analytics_repository=_FakeAnalyticsRepo(),
         agent_run_repository=_FakeRunRepo(runs=runs),
@@ -332,7 +373,10 @@ def test_extract_evidence():
 
 def test_extract_tool_attempts():
     events = [
-        {"type": "tool_call", "payload": {"tool_name": "GetMetrics", "arguments": {"metric": "cpu"}}},
+        {
+            "type": "tool_call",
+            "payload": {"tool_name": "GetMetrics", "arguments": {"metric": "cpu"}},
+        },
     ]
     attempts = _extract_tool_attempts(events)
     assert len(attempts) == 1

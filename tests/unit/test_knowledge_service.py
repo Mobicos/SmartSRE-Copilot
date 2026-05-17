@@ -42,9 +42,7 @@ class _FakeKnowledgeRepo:
             if v.get("knowledge_base_id") == kb_id and v.get("status") == "draft"
         ]
 
-    def update_status(
-        self, item_id: int, status: str, *, published_by: str | None = None
-    ) -> None:
+    def update_status(self, item_id: int, status: str, *, published_by: str | None = None) -> None:
         if item_id in self._items:
             self._items[item_id]["status"] = status
 
@@ -54,10 +52,7 @@ class _FakeKnowledgeRepo:
     def count_by_type(self, knowledge_base_id: str) -> dict[str, int]:
         counts: dict[str, int] = {}
         for v in self._items.values():
-            if (
-                v.get("knowledge_base_id") == knowledge_base_id
-                and v.get("status") == "published"
-            ):
+            if v.get("knowledge_base_id") == knowledge_base_id and v.get("status") == "published":
                 t = v.get("item_type", "unknown")
                 counts[t] = counts.get(t, 0) + 1
         return counts

@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def check_tool_order(
-    expected: list[str], actual: list[str]
-) -> tuple[bool, str]:
+def check_tool_order(expected: list[str], actual: list[str]) -> tuple[bool, str]:
     if not expected:
         return True, "no expected tool order"
     if actual == expected:
@@ -44,9 +42,7 @@ def check_terminal_status(
 def check_evidence_quality(
     events: list[dict[str, Any]],
 ) -> tuple[bool, str]:
-    evidence_events = [
-        e for e in events if e.get("type") in {"tool_result", "evidence_assessment"}
-    ]
+    evidence_events = [e for e in events if e.get("type") in {"tool_result", "evidence_assessment"}]
     if not evidence_events:
         return False, "no evidence events found"
     quality_values = []
@@ -57,7 +53,10 @@ def check_evidence_quality(
             quality_values.append(q)
     if not quality_values:
         return True, "evidence events present (quality not explicitly rated)"
-    has_strong = any(v in ("strong", "high") or (isinstance(v, (int, float)) and v >= 0.6) for v in quality_values)
+    has_strong = any(
+        v in ("strong", "high") or (isinstance(v, (int, float)) and v >= 0.6)
+        for v in quality_values
+    )
     if has_strong:
         return True, "at least one strong evidence assessment"
     return False, "no strong evidence assessments found"

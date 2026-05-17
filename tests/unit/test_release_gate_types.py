@@ -100,9 +100,7 @@ def test_cancelled_run_blocks_resume():
     import asyncio
 
     result = asyncio.get_event_loop().run_until_complete(
-        svc.process_resume_task(
-            {"run_id": "r1", "tool_name": "GetMetrics", "decision": "approved"}
-        )
+        svc.process_resume_task({"run_id": "r1", "tool_name": "GetMetrics", "decision": "approved"})
     )
     assert result["status"] == "ignored"
     assert result["reason"] == "run_cancelled"

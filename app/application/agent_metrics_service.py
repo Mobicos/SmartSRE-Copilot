@@ -34,9 +34,7 @@ class AgentMetricsService:
         override_rate = self._compute_approval_override_rate(completed_runs)
         p95 = self._compute_p95_latency(completed_runs)
         handoff_rate = self._compute_handoff_rate(completed_runs)
-        approval_wait_p50, approval_wait_p95 = self._compute_approval_wait_times(
-            completed_runs
-        )
+        approval_wait_p50, approval_wait_p95 = self._compute_approval_wait_times(completed_runs)
 
         thresholds = {
             "goal_completion_rate_min": 0.80,

@@ -95,9 +95,7 @@ def test_faq_generation_without_knowledge_store():
 
 def test_faq_generation_dedup_conflict():
     kb_store = _FakeKnowledgeStore()
-    kb_store._items.append(
-        {"id": 99, "dedup_hash": "existing_hash", "title": "existing"}
-    )
+    kb_store._items.append({"id": 99, "dedup_hash": "existing_hash", "title": "existing"})
     service = _make_service(badcases=[], knowledge_store=kb_store)
 
     # Patch _simple_hash to return the known hash

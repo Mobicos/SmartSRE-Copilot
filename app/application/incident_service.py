@@ -48,9 +48,7 @@ class IncidentContextService:
         )
         return self._incident_repo.get_incident(incident_id) or {}
 
-    def link_run(
-        self, incident_id: str, run_id: str, *, relationship: str = "diagnosed_by"
-    ) -> str:
+    def link_run(self, incident_id: str, run_id: str, *, relationship: str = "diagnosed_by") -> str:
         return self._incident_repo.add_link(
             incident_id=incident_id,
             target_type="agent_run",
@@ -92,9 +90,7 @@ class IncidentContextService:
             workspace_id=workspace_id, status=status, limit=limit
         )
 
-    def update_status(
-        self, incident_id: str, status: str, *, summary: str | None = None
-    ) -> None:
+    def update_status(self, incident_id: str, status: str, *, summary: str | None = None) -> None:
         self._incident_repo.update_incident_status(incident_id, status, summary=summary)
 
 
@@ -152,9 +148,7 @@ class HandoffSummaryService:
         failure_reasons = _extract_failure_reasons(run, events)
         next_actions = _suggest_next_actions(run, evidence_collected, failure_reasons)
         confidence = _extract_confidence(events)
-        handoff_reason = run.get("handoff_reason") or _infer_handoff_reason(
-            run, failure_reasons
-        )
+        handoff_reason = run.get("handoff_reason") or _infer_handoff_reason(run, failure_reasons)
 
         summary = HandoffSummary(
             run_id=run_id,
@@ -192,9 +186,7 @@ class AnalyticsService:
         self._agent_run_repo = agent_run_repository
         self._incident_repo = incident_repository
 
-    def detect_findings(
-        self, *, workspace_id: str, limit: int = 200
-    ) -> list[dict[str, Any]]:
+    def detect_findings(self, *, workspace_id: str, limit: int = 200) -> list[dict[str, Any]]:
         runs = self._agent_run_repo.list_runs(limit=limit)
         findings: list[dict[str, Any]] = []
 
@@ -216,9 +208,7 @@ class AnalyticsService:
 
         return findings
 
-    def persist_findings(
-        self, *, workspace_id: str, findings: list[dict[str, Any]]
-    ) -> list[str]:
+    def persist_findings(self, *, workspace_id: str, findings: list[dict[str, Any]]) -> list[str]:
         ids: list[str] = []
         for finding in findings:
             fid = self._analytics_repo.create_finding(
@@ -261,11 +251,7 @@ class AnalyticsService:
     def _detect_monitoring_gaps(
         self, workspace_id: str, runs: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
-        empty_runs = [
-            r
-            for r in runs
-            if (r.get("empty_result_count") or 0) > 3
-        ]
+        empty_runs = [r for r in runs if (r.get("empty_result_count") or 0) > 3]
         if len(empty_runs) < 2:
             return None
         return {
@@ -297,9 +283,7 @@ class AnalyticsService:
     def _detect_automation_candidates(
         self, workspace_id: str, runs: list[dict[str, Any]]
     ) -> dict[str, Any] | None:
-        duplicate_runs = [
-            r for r in runs if (r.get("duplicate_tool_call_count") or 0) > 2
-        ]
+        duplicate_runs = [r for r in runs if (r.get("duplicate_tool_call_count") or 0) > 2]
         if len(duplicate_runs) < 2:
             return None
         return {
@@ -388,9 +372,7 @@ def _extract_tool_attempts(events: list[dict[str, Any]]) -> list[dict[str, Any]]
     return attempts
 
 
-def _extract_failure_reasons(
-    run: dict[str, Any], events: list[dict[str, Any]]
-) -> list[str]:
+def _extract_failure_reasons(run: dict[str, Any], events: list[dict[str, Any]]) -> list[str]:
     reasons: list[str] = []
     if run.get("error_message"):
         reasons.append(str(run["error_message"]))
@@ -432,9 +414,7 @@ def _extract_confidence(events: list[dict[str, Any]]) -> float:
     return 0.0
 
 
-def _infer_handoff_reason(
-    run: dict[str, Any], failure_reasons: list[str]
-) -> str:
+def _infer_handoff_reason(run: dict[str, Any], failure_reasons: list[str]) -> str:
     if failure_reasons:
         return failure_reasons[0]
     return "insufficient_evidence"

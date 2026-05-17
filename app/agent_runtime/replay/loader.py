@@ -8,7 +8,9 @@ from typing import Any
 
 from app.agent_runtime.replay.fixture_schema import ReplayFixture
 
-_FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent.parent / "tests" / "agent_scenarios" / "fixtures"
+_FIXTURES_DIR = (
+    Path(__file__).resolve().parent.parent.parent.parent / "tests" / "agent_scenarios" / "fixtures"
+)
 
 
 def load_fixtures(*, fixtures_dir: Path | None = None) -> list[ReplayFixture]:

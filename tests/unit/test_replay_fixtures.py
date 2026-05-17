@@ -112,7 +112,10 @@ def _make_cpu_high_run() -> tuple[dict[str, Any], list[dict[str, Any]]]:
             "type": "tool_call",
             "payload": {"tool_name": "GetProcessInfo", "arguments": {}},
         },
-        {"type": "tool_result", "payload": {"tool_name": "GetProcessInfo", "output": {"top": "java"}}},
+        {
+            "type": "tool_result",
+            "payload": {"tool_name": "GetProcessInfo", "output": {"top": "java"}},
+        },
         {"type": "final_report", "payload": {"report": "CPU 使用率 95%"}},
     ]
     return run, events

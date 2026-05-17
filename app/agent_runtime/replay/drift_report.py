@@ -14,14 +14,10 @@ def compute_drift(
 ) -> dict[str, Any]:
     event_types = [str(e.get("type") or "") for e in events]
     tool_calls = [e for e in events if e.get("type") == "tool_call"]
-    tool_names = [
-        str((e.get("payload") or {}).get("tool_name") or "") for e in tool_calls
-    ]
+    tool_names = [str((e.get("payload") or {}).get("tool_name") or "") for e in tool_calls]
     expected_tool_names = [tc.tool_name for tc in fixture.expected_tool_calls]
 
-    missing_event_types = [
-        t for t in fixture.required_event_types if t not in event_types
-    ]
+    missing_event_types = [t for t in fixture.required_event_types if t not in event_types]
     unexpected_event_types = [
         t for t in set(event_types) if t not in fixture.required_event_types and t
     ]

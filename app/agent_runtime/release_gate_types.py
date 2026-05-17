@@ -49,7 +49,5 @@ class KnowledgeGateResult(BaseModel):
     rerank_precision: float | None = None
     rerank_recall: float | None = None
     gate_pass: bool = False
-    gate_thresholds: KnowledgeGateThresholds = Field(
-        default_factory=KnowledgeGateThresholds
-    )
+    gate_thresholds: KnowledgeGateThresholds = Field(default_factory=KnowledgeGateThresholds)
     total_runs_evaluated: int = 0

@@ -32,8 +32,7 @@ class ReplayOutcome:
             "status": self.status,
             "score": self.score,
             "checks": [
-                {"name": c.name, "passed": c.passed, "message": c.message}
-                for c in self.checks
+                {"name": c.name, "passed": c.passed, "message": c.message} for c in self.checks
             ],
             "drift": self.drift,
         }
@@ -80,9 +79,7 @@ def _all_checks(
     checks: list[EvalCheck] = []
     event_types = [str(e.get("type") or "") for e in events]
     tool_calls = [e for e in events if e.get("type") == "tool_call"]
-    tool_names = [
-        str((e.get("payload") or {}).get("tool_name") or "") for e in tool_calls
-    ]
+    tool_names = [str((e.get("payload") or {}).get("tool_name") or "") for e in tool_calls]
     searchable = _searchable_text(run, events)
 
     checks.append(
@@ -164,8 +161,7 @@ def _all_checks(
 
     report_text = str(run.get("final_report") or "")
     if "root cause" in report_text.lower() and not any(
-        "evidence" in searchable or "citation" in searchable
-        for _ in [1]
+        "evidence" in searchable or "citation" in searchable for _ in [1]
     ):
         checks.append(
             EvalCheck(

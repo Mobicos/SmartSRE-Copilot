@@ -449,7 +449,10 @@ class AgentRuntime:
                                 event_type="knowledge_citations",
                                 stage="context",
                                 message=f"检索到相关知识 {len(knowledge_citations)} 条。",
-                                payload={"citations": knowledge_citations, "gate": retrieval_gate_payload},
+                                payload={
+                                    "citations": knowledge_citations,
+                                    "gate": retrieval_gate_payload,
+                                },
                             )
                     except Exception:
                         logger.debug("Knowledge retrieval failed, continuing without citations")

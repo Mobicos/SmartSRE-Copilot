@@ -205,9 +205,7 @@ def observe_agent_run(
 def observe_knowledge_search(
     *, item_type: str = "", cache_hit: bool = False, latency_seconds: float = 0.0
 ) -> None:
-    _KNOWLEDGE_SEARCH.labels(
-        item_type=item_type, cache_hit=str(cache_hit).lower()
-    ).inc()
+    _KNOWLEDGE_SEARCH.labels(item_type=item_type, cache_hit=str(cache_hit).lower()).inc()
     if latency_seconds > 0:
         _KNOWLEDGE_SEARCH_LATENCY.observe(latency_seconds)
 

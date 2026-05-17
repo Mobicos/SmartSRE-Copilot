@@ -309,7 +309,9 @@ class IncidentTable(SQLModel, table=True):
     summary: str | None = None
     created_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
     updated_at: datetime = Field(sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=False))
-    resolved_at: datetime | None = Field(default=None, sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=True))
+    resolved_at: datetime | None = Field(
+        default=None, sa_column=sa.Column(sa.TIMESTAMP(timezone=True), nullable=True)
+    )
 
 
 class IncidentLinkTable(SQLModel, table=True):
