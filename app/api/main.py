@@ -8,6 +8,8 @@ from app.api.routes import (
     chat,
     contracts,
     file,
+    incidents,
+    knowledge,
     native_agent,
     scenario_regression,
 )
@@ -19,4 +21,6 @@ api_router.include_router(aiops.router, tags=["AIOps"])
 api_router.include_router(native_agent.router, tags=["NativeAgent"])
 api_router.include_router(scenario_regression.router, tags=["ScenarioRegression"])
 api_router.include_router(agent_metrics.router, tags=["AgentMetrics"])
+api_router.include_router(knowledge.router, tags=["Knowledge"])
+api_router.include_router(incidents.router, tags=["Incidents"])
 api_router.include_router(contracts.router, tags=["Contracts"])

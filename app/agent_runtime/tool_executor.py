@@ -269,6 +269,10 @@ class ToolExecutor:
             "data_boundary": str(getattr(tool, "data_boundary", "workspace") or "workspace"),
             "side_effect": side_effect,
             "fallback_strategy": str(getattr(tool, "fallback_strategy", "handoff") or "handoff"),
+            "credential_scope": str(getattr(tool, "credential_scope", "workspace") or "workspace"),
+            "server_id": getattr(tool, "server_id", None),
+            "transport": str(getattr(tool, "transport", "local") or "local"),
+            "rate_limit_rpm": getattr(tool, "rate_limit_rpm", None),
         }
 
     @staticmethod

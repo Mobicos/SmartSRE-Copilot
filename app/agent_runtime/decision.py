@@ -168,6 +168,8 @@ class AgentDecision(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     decision_status: DecisionRunStatus | ActionType | str | None = None
     handoff_reason: str | None = None
+    validation_status: str | None = None
+    validation_error: str | None = None
 
     @field_validator("reasoning_summary")
     @classmethod
@@ -211,6 +213,9 @@ class AgentDecisionState(BaseModel):
     consecutive_empty_evidence: int = 0
     decisions: list[AgentDecision] = Field(default_factory=list)
     memory_context: str = ""
+    knowledge_citations: list[dict[str, Any]] = Field(default_factory=list)
+    active_skills: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_gate: dict[str, Any] | None = None
 
     def with_decision(self, decision: AgentDecision) -> AgentDecisionState:
         status: DecisionRunStatus = self.status

@@ -133,6 +133,40 @@ _SCRAPE_ERRORS = Counter(
     ("component",),
     registry=_REGISTRY,
 )
+_KNOWLEDGE_SEARCH = Counter(
+    "smartsre_knowledge_search_total",
+    "Knowledge retrieval searches.",
+    ("item_type", "cache_hit"),
+    registry=_REGISTRY,
+)
+_KNOWLEDGE_SEARCH_LATENCY = Histogram(
+    "smartsre_knowledge_search_latency_seconds",
+    "Knowledge retrieval search latency.",
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0),
+    registry=_REGISTRY,
+)
+_RETRIEVAL_CONFIDENCE_GATE = Counter(
+    "smartsre_retrieval_confidence_gate",
+    "Retrieval confidence gate outcomes.",
+    ("outcome",),
+    registry=_REGISTRY,
+)
+_SKILL_MATCH = Counter(
+    "smartsre_skill_match_total",
+    "Skill matching invocations.",
+    ("skill_id",),
+    registry=_REGISTRY,
+)
+_FAQ_HIT = Counter(
+    "smartsre_faq_hit_total",
+    "FAQ knowledge hit count.",
+    registry=_REGISTRY,
+)
+_KNOWLEDGE_DEDUP_CONFLICT = Counter(
+    "smartsre_knowledge_dedup_conflict_total",
+    "Knowledge dedup conflict count.",
+    registry=_REGISTRY,
+)
 
 _SERVICE_INFO.labels(service="SmartSRE Copilot", version="0.1.0.dev0").set(1)
 
@@ -168,6 +202,32 @@ def observe_agent_run(
         _AGENT_STEP_COUNT.observe(step_count)
 
 
+def observe_knowledge_search(
+    *, item_type: str = "", cache_hit: bool = False, latency_seconds: float = 0.0
+) -> None:
+    _KNOWLEDGE_SEARCH.labels(
+        item_type=item_type, cache_hit=str(cache_hit).lower()
+    ).inc()
+    if latency_seconds > 0:
+        _KNOWLEDGE_SEARCH_LATENCY.observe(latency_seconds)
+
+
+def observe_retrieval_gate(*, outcome: str = "passed") -> None:
+    _RETRIEVAL_CONFIDENCE_GATE.labels(outcome=outcome).inc()
+
+
+def observe_skill_match(*, skill_id: str = "") -> None:
+    _SKILL_MATCH.labels(skill_id=skill_id).inc()
+
+
+def observe_faq_hit() -> None:
+    _FAQ_HIT.inc()
+
+
+def observe_knowledge_dedup_conflict() -> None:
+    _KNOWLEDGE_DEDUP_CONFLICT.inc()
+
+
 def render_prometheus_metrics() -> bytes:
     """Return Prometheus text exposition bytes."""
     try:
@@ -193,12 +253,18 @@ def reset_metrics_for_testing() -> None:
         _AGENT_TOKEN_USAGE,
         _AGENT_COST_ESTIMATE,
         _AGENT_STEP_COUNT,
+        _KNOWLEDGE_SEARCH,
+        _KNOWLEDGE_SEARCH_LATENCY,
+        _RETRIEVAL_CONFIDENCE_GATE,
+        _SKILL_MATCH,
     ):
         metric.clear()
     _AGENT_TOOL_CALLS.set(0)
     _AGENT_TOOL_CALLS_LEGACY.set(0)
     _AGENT_HANDOFFS.set(0)
     _AGENT_HANDOFFS_LEGACY.set(0)
+    _FAQ_HIT._value.set(0)
+    _KNOWLEDGE_DEDUP_CONFLICT._value.set(0)
     _AGENT_RELEASE_GATE.labels(metric_name="goal_completion_rate").set(0)
     _AGENT_RELEASE_GATE.labels(metric_name="unnecessary_tool_call_ratio").set(0)
     _AGENT_RELEASE_GATE.labels(metric_name="approval_override_rate").set(0)
